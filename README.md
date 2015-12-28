@@ -17,15 +17,16 @@ This is a R Markdown file that processes the CSV output from CRITTA. When the Ma
 3. Cumulative Volume Drunk Per Fly
 4. Time Course (binned by seconds specified in `bw`)
 
-* Proportion of Flies Feeding Preference Index
-* Feed Count
-* Feed Duration
-* Volume Intake
-* Feed Count
-* Cumulative Volume Intake Feed Size (aka Meal Size) Feed Duration
+    * Proportion of Flies Feeding Preference Index
+    * Feed Count
+    * Feed Duration
+    * Volume Intake
+    * Feed Count
+    * Cumulative Volume Intake Feed Size (aka Meal Size) Feed Duration
 
 5. Summary Plots
-* Density Distribution
-* Summary Histogram
-* Summary Table
-* Kruskal-Wallis and post-hoc Dunn’s Test
+
+    * Density Distribution
+    * Summary Histogram
+    * Summary Table
+    * Kruskal-Wallis and post-hoc Dunn’s Test
