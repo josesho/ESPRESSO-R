@@ -16,6 +16,7 @@ This is a R Markdown file that processes the CSV output from CRITTA. When the Ma
 2. Correlation of Feed Duration and Feed Volume
 3. Cumulative Volume Drunk Per Fly
 4. Time Course (binned by seconds specified in `bw`)
+
 * Proportion of Flies Feeding Preference Index
 * Feed Count
 * Feed Duration
