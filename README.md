@@ -2,7 +2,7 @@
 R Code to analyse feeding data from custom ESPRESSO rig and CRITTA software output.
 
 ## Requirements 
-### Mac
+### Mac OS X
 * R version 3.2.0 
 * RStudio Version 0.99.441
 * MacTex 2015 (Required for Tufte-style PDF layout)
