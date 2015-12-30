@@ -23,7 +23,7 @@ The R Markdown file can be knitted in RStudio runnning on Windows as well, but y
     - This file has a header line `Factor,Levels`.
     - Each line after that is a contrast factor, with the levels listed and separated by commas.
     ```
-    Factor,Levels
+    Factor, Levels
     Genotype, W111;Driver-Gal4, W111;UAS-TrpA1, Driver-Gal4>UAS-TrpA1
     FoodType, Sucrose_Only, Arabinose_Only, Sucrose_and_Arabinose
     Temperature, 22, 29
@@ -61,5 +61,10 @@ The R Markdown file can be knitted in RStudio runnning on Windows as well, but y
 10. Knit a PDF file by clicking the Knit button (alternatively, `File > Knit` or `Shift-Command-K`). 
 
 ## Troubleshooting
-This section will be completed in the near future.
-  
+- *"Error in line 1867"*
+    - This error most likely means that your `reference_levels.txt` was not properly formatted. Make sure that the format matches as the example given above.
+- *"FeedStartTimeRelative not being calculated correctly. Check the format of the StartTime column."*
+- *"There are Feed Events that have a negative time stamp."*
+    - This error most likely indicates that the format of the StartTime column in the feedlog CSV files is not in "Year-month-day Hour-Minute-Second" format. This most likely arose because the file was edited in Microsoft Excel. You should use the raw CSV directly produced by CRITTA.
+- *"Check the filename for the feedlog file ..."*
+    - As the rest of the error message reports, make sure that the in the filename, the date is in YYYY-mm-dd format, the time is in hh-mm-ss format, and BOTH date and time MUST be flanked by underscores ' _ '.
