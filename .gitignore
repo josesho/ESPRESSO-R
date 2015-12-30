@@ -1,0 +1,32 @@
+# History files
+.Rhistory
+.Rapp.history
+
+# Session Data files / Project files
+*.RData
+*.Rproj
+
+# Example code in package build process
+*-Ex.R
+
+# RStudio files
+.Rproj.user/
+
+# produced vignettes
+vignettes/*.html
+vignettes/*.pdf
+
+# OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
+.httr-oauth
+
+# README.html preview output
+README.html
+
+# test folders containing ESPRESSO data
+test/
+test2/
+.Rproj.user
+
+# PDF output from the markdown file
+*.pdf
+ESPRESSO.Analysis.STABLE.30.12.2015_files

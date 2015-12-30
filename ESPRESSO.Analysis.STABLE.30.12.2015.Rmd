@@ -1,5 +1,5 @@
 ---
-title: "Analysis of ESPRESSO data (Stable 15.12.2015)"
+title: "Analysis of ESPRESSO data (Stable 30.12.2015)"
 author: "Your Name Goes Here"
 output: rmarkdown::tufte_handout
 ---
@@ -13,7 +13,7 @@ h <- 7 # Duration of experiment, IN HOURS. Change this if you just want to analy
 bs <- 300 # Bin size of combined density raster plot, in seconds. Anywhere between 5 min (300s) and 10 min (600s) seems to be good.
 bw <- 600 # Bin-sizes of time-course in seconds (s). Change here to change the bin size. (600s = 10 min)
 
-file.path <- c("/home/amnesiac/data/pam.neurons.feeding/test2")
+file.path <- c("/Users/josesho/Desktop/scratch/ESPRESSO/test")
 # Local file directory path name where data files are stored.
 ```
 
@@ -55,7 +55,7 @@ install.packages("RColorBrewer")
 install.packages("xtable")
 ```
 
-```{r LoadLibraries, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r LoadLibraries, message = FALSE, warning = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
 # For running Dunn's Test
 library("dunn.test")
 
@@ -401,7 +401,7 @@ rawdata.all <- full_join(feedlog.all, metadata.all, by = "FlyID")
 # Assign FoodType to the feed events
 for (rownum in 1:nrow(rawdata.all)) {
   foodchoice.col <- paste("Food.", (rawdata.all[rownum, "FoodIdx"]), sep = "")
-  rawdata.all[rownum, "FoodType"] <- as.character(rawdata.all[2, paste(foodchoice.col)])
+  rawdata.all[rownum, "FoodType"] <- as.character(rawdata.all[rownum, paste(foodchoice.col)])
 }
 rawdata.all[, "FoodType"] <- as.factor(rawdata.all[, "FoodType"])
 n <- paste("bin.", as.character(bw/60), ".min", sep = "")
@@ -437,35 +437,21 @@ rawdata.all[, "FeedStartTimeRelative"] <- as.numeric(as.character(rawdata.all[, 
 rawdata.all <- filter(rawdata.all, FeedStartTimeRelative < h * 3600)
 rawdata.all[, "FeedStartTimeRelative"][rawdata.all[, "FeedStartTimeRelative"] == 0] <- NA
 
+# Read in levels.
+temp.contrasts <- read.csv( file=paste(file.path,"/reference_levels.txt", sep = ""), header = FALSE)
+temp.contrasts[temp.contrasts == ""] <- NA # Fills in empty cells with "NA".
 
-# Read in reference levels.
-ref.levels <- transpose(read.csv( file=paste(file.path,"/reference_levels.txt", sep = ""), header = TRUE))
-colnames.ref.levels <- ref.levels[1,]
-ref.levels <- data.frame(ref.levels[-c(1),])
-colnames(ref.levels) <- colnames.ref.levels
-
-# Loop below turns all reference levels to uppercase.
-for ( c in colnames(ref.levels) ) {
-  ref.levels[1, c] <- toupper(ref.levels[1, c])
-}
-
-# Order ref.levels according to contrast.columns
-ref.levels <- as.data.table( ref.levels )
-setcolorder(ref.levels, contrast.columns)
-ref.levels <- data.frame(ref.levels)
-
-
-# Set reference levels.
 reflevels <- list()
-for (i in contrast.columns) {
-  rawdata.all[,i] <- as.factor( toupper(rawdata.all[,i]) ) # Makes sure contrast columns are factors, and to mitigate against capitalization errors.
-  non.ref.levels <- levels(rawdata.all[,i])[!levels(rawdata.all[,i]) %in% ref.levels[,paste(i)]]
-  set.ref.levels <- c(ref.levels[,paste(i)], non.ref.levels)
-  reflevels[[paste(i)]] <- set.ref.levels
+for (row in 2:nrow(temp.contrasts)) {
+  x <- temp.contrasts[row, ][!is.na(temp.contrasts[row, ])] # removes NA from row
+  reflevels[[ as.character(temp.contrasts[row, 1]) ]] <- toupper( x[2:length(x)] ) # Adds the ordered levels to the contrast list, as uppercase text.
 }
 
-for (i in contrast.columns.noFoodType) {
-  metadata.all[,i] <- as.factor( toupper(metadata.all[,i]) ) # Makes sure contrast columns are factors, and to mitigate against capitalization errors.
+# Makes sure contrast columns are factors, and to mitigate against capitalization errors.
+# Then set order of levels for each experimental contrast, according to that dictated in `reference_levels.txt`.
+for (i in contrast.columns) {
+  rawdata.all[,i] <- toupper(rawdata.all[,i])
+  rawdata.all[,i] <- factor(rawdata.all[,i], reflevels[[i]])
 }
 
 # Check that all contrast levels are captured correctly in `reference_levels.txt`.
@@ -473,18 +459,7 @@ if ( all.equal(names(reflevels), contrast.columns) == FALSE ) {
   stop("Contrast Levels in `reference_levels.txt` do not match the set of columns in the metadata with contrasts. Please check that all factors with contrasts (across all feedlogs) are indicated in  `reference_levels.txt`.")
 }
 
-## Why is this chunk of code here??
-# levels.contrast.factors <- c()
-# for ( i in 1:length(contrast.columns.noFoodType) ) {
-#   for (d in contrast.columns.noFoodType[!contrast.columns.noFoodType %in% c(c)] )
-#     levels.contrast.factors
-# }
-
-# Set order of levels for each experimental contrast, according to that dictated in `reference_levels.txt` and in `reflevels`.
-for (c in contrast.columns) {
-  rawdata.all[, c] <- factor(rawdata.all[, c], reflevels[[c]])
-  rawdata.all <- arrange_(rawdata.all, c) # VERY IMPORTANT -- ORDERS THE DATAFRAME AS DESIRED.
-}
+rawdata.all <- arrange_(rawdata.all, contrast.columns) # VERY IMPORTANT -- ORDERS THE DATAFRAME AS DESIRED.
 
 # Create new column in `rawdata.all` to combine all contrasts, without Food.
 rawdata.all <- unite_(rawdata.all, "contrast.groups.noFoodType", contrast.columns.noFoodType, sep = "\n", remove = FALSE)
@@ -496,13 +471,15 @@ rawdata.all <- unite_(rawdata.all, "contrast.groups.withFoodType", contrast.colu
 rawdata.all <- unite_(rawdata.all, "FlyID.contrast.groups.withFoodType", c("FlyID", contrast.columns), sep = "\n", remove = FALSE)
 
 # Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
-levels.contrast.groups.withFoodType <- unique(rawdata.all[, "contrast.groups.withFoodType"])
-rawdata.all[, "contrast.groups.withFoodType"] <- factor(rawdata.all[, "contrast.groups.withFoodType"], 
-                                                                levels.contrast.groups.withFoodType)
+reflevels.combis <- expand.grid(reflevels) # Creates a dataframe with all combinations of contrast levels.
+reflevels.combis <- unite_(reflevels.combis, "contrast.groups.noFoodType", contrast.columns.noFoodType, sep = "\n", remove = FALSE)
+reflevels.combis <- unite_(reflevels.combis, "contrast.groups.withFoodType", contrast.columns, sep = "\n", remove = FALSE)
 
-levels.contrast.groups.noFoodType <- unique(rawdata.all[, "contrast.groups.noFoodType"])
+rawdata.all[, "contrast.groups.withFoodType"] <- factor(rawdata.all[, "contrast.groups.withFoodType"], 
+                                                                unique(reflevels.combis$contrast.groups.withFoodType) )
+
 rawdata.all[, "contrast.groups.noFoodType"] <- factor(rawdata.all[, "contrast.groups.noFoodType"], 
-                                                              levels.contrast.groups.noFoodType)
+                                                              unique(reflevels.combis$contrast.groups.noFoodType) )
 ```
 
 ```{r IdentifyContrastNumbers, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
@@ -637,12 +614,12 @@ summary.per.fly <- unite_(summary.per.fly, "contrast.groups.noFoodType", contras
 # Create new column in `summary.per.fly` to combine all contrasts, with Food.
 summary.per.fly <- unite_(summary.per.fly, "contrast.groups.withFoodType", contrast.columns, sep = "\n", remove = FALSE)
 
-# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
+# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt`.
 summary.per.fly[, "contrast.groups.withFoodType"] <- factor(summary.per.fly[, "contrast.groups.withFoodType"], 
-                                                        levels.contrast.groups.withFoodType)
+                                                        unique(reflevels.combis$contrast.groups.withFoodType))
 
 summary.per.fly[, "contrast.groups.noFoodType"] <- factor(summary.per.fly[, "contrast.groups.noFoodType"], 
-                                                      levels.contrast.groups.noFoodType)
+                                                      unique(reflevels.combis$contrast.groups.noFoodType))
 ```
 
 ```{r summaryPerContrastGroupWithFood, message = FALSE, error = TRUE, echo = FALSE, eval = TRUE}
@@ -797,12 +774,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                                              "contrast.groups.noFoodType", 
                                              contrast.columns.noFoodType, sep = "\n", remove = FALSE)
   
-  # Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
+  # Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt`.
   summary.per.contrastGroup.withFood[, "contrast.groups.withFoodType"] <- factor(summary.per.contrastGroup.withFood[, "contrast.groups.withFoodType"], 
-                                                                                 levels.contrast.groups.withFoodType)
+                                                                                 unique(reflevels.combis$contrast.groups.withFoodType))
   
   summary.per.contrastGroup.withFood[, "contrast.groups.noFoodType"] <- factor(summary.per.contrastGroup.withFood[, "contrast.groups.noFoodType"], 
-                                                                             levels.contrast.groups.noFoodType)
+                                                                             unique(reflevels.combis$contrast.groups.noFoodType))
 }
 ```
 
@@ -945,9 +922,9 @@ summary.per.contrastGroup.noFood <- unite_(summary.per.contrastGroup.noFood,
                                            contrast.columns.noFoodType, 
                                            sep = "\n", remove = FALSE)
 
-# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
+# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt`.
 summary.per.contrastGroup.noFood[, "contrast.groups.noFoodType"] <-  factor(summary.per.contrastGroup.noFood[, "contrast.groups.noFoodType"], 
-                                                      levels.contrast.groups.noFoodType)
+                                                      unique(reflevels.combis$contrast.groups.noFoodType))
 
 summary.per.contrastGroup.noFood <- 
   mutate(summary.per.contrastGroup.noFood,
@@ -1049,12 +1026,12 @@ bin.per.fly <- unite_(bin.per.fly, "contrast.groups.noFoodType",
                       sep = "\n", 
                       remove = FALSE)
 
-# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
+# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt`.
 bin.per.fly[, "contrast.groups.withFoodType"] <- factor(bin.per.fly[, "contrast.groups.withFoodType"], 
-                                                        levels.contrast.groups.withFoodType)
+                                                        unique(reflevels.combis$contrast.groups.withFoodType))
 
 bin.per.fly[, "contrast.groups.noFoodType"] <-  factor(bin.per.fly[, "contrast.groups.noFoodType"], 
-                                                      levels.contrast.groups.noFoodType)
+                                                      unique(reflevels.combis$contrast.groups.noFoodType))
 
 # Make sure binned time column is a numeric column.
 bin.per.fly[, n] <- as.numeric( as.character(bin.per.fly[, n]) )
@@ -1251,10 +1228,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                                            sep = "\n", 
                                            remove = FALSE)
   
-  # Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
-  bin.per.contrastGroup.withFood[, "contrast.groups.withFoodType"] <- factor(bin.per.contrastGroup.withFood[, "contrast.groups.withFoodType"], levels = levels.contrast.groups.withFoodType)
+  # Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt`.
+  bin.per.contrastGroup.withFood[, "contrast.groups.withFoodType"] <- factor(bin.per.contrastGroup.withFood[, "contrast.groups.withFoodType"], 
+                                                                             levels = unique(reflevels.combis$contrast.groups.withFoodType))
   
-  bin.per.contrastGroup.withFood[, "contrast.groups.noFoodType"] <-  factor(bin.per.contrastGroup.withFood[, "contrast.groups.noFoodType"], levels = levels.contrast.groups.noFoodType)
+  bin.per.contrastGroup.withFood[, "contrast.groups.noFoodType"] <-  factor(bin.per.contrastGroup.withFood[, "contrast.groups.noFoodType"], 
+                                                                            levels = unique(reflevels.combis$contrast.groups.noFoodType))
   
   # Make sure binned time column is a numeric column.
   bin.per.contrastGroup.withFood[, n] <- as.numeric( as.character(bin.per.contrastGroup.withFood[, n]) )
@@ -1447,9 +1426,9 @@ bin.per.contrastGroup.noFood <- unite_(bin.per.contrastGroup.noFood, "contrast.g
                       sep = "\n", 
                       remove = FALSE)
 
-# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
+# Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt`.
 bin.per.contrastGroup.noFood[, "contrast.groups.noFoodType"] <-  factor(bin.per.contrastGroup.noFood[, "contrast.groups.noFoodType"], 
-                                                                        levels.contrast.groups.noFoodType)
+                                                                        unique(reflevels.combis$contrast.groups.noFoodType))
 # Make sure binned time column is a numeric column.
 bin.per.contrastGroup.noFood[, n] <- as.numeric( as.character(bin.per.contrastGroup.noFood[, n]) )
 ```
@@ -1457,224 +1436,181 @@ bin.per.contrastGroup.noFood[, n] <- as.numeric( as.character(bin.per.contrastGr
 ```{r HedgesG_withFood, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
   summary.escalc.withFood <- list()
-  for (c in contrast.columns) {
-    for ( l in levels(summary.per.contrastGroup.withFood[, c]) ) {
-      filter_criteria = interp(~ a == b, 
-                               .values = list(a = as.name(c), 
-                                              b = l))
-      temp.df <- droplevels(filter_(summary.per.contrastGroup.withFood, .dots = filter_criteria))  
-      temp.ref <-  paste(ref.levels[ , -which(names(ref.levels) %in% c(c))], collapse = "\t")
-      t <- dplyr::select(temp.df, one_of(contrast.columns[!contrast.columns %in% c(c)]))
-      t <- dplyr::mutate(t, x = apply(t, 1, paste, collapse = "\t"))
-      temp.df[, "tempContrast"] <- as.factor(t$x)
-      
-      # column for contrastGroups.withFoodType.
-      # paste the contrast.columns from temp.df together!
-      cols <- unique(c(contrast.columns, "FoodType"))
-      dots <- lapply(cols, as.symbol)
-#       temp.df[, "contrast.groups.withFoodType"] <- factor( apply(select_(temp.df, .dots = dots), 
-#                                                                  1, paste, collapse = "\t"),
-#                                                            levels = levels.contrast.groups.withFoodType)
-      
-      # Set reference levels.
-      temp.non.ref.levels <- levels(temp.df[, "tempContrast"])[!levels(temp.df[, "tempContrast"]) %in% temp.ref]
-      temp.df[, "tempContrast"] <- factor(temp.df[, "tempContrast"])
-      temp.df <- arrange(temp.df, contrast.groups.withFoodType) # Do not sort after this line!!
-      
-      # Reformats temp.df so that all pairwise combinations are in paired rows. 
-      # See https://www.biostars.org/p/3694/
-      temp.df <- data.frame( apply(temp.df, 2, combn, m = 2) )
-      for (i in (length(contrast.columns) + 3) : (ncol(temp.df) - 1) ) {
-        temp.df[, i] <- as.numeric( as.character(temp.df[, i]) )
-      }
-
-      for ( i in seq(from = 1, to = nrow(temp.df), by = 2) ) {
-        # Feed Count
-        feed.count.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                    m1i = mean.total.feed.count.per.fly[i + 1], 
-                                    m2i = mean.total.feed.count.per.fly[i], 
-                                    n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
-                                    sd1i = sd.total.feed.count.per.fly[i + 1], 
-                                    sd2i = sd.total.feed.count.per.fly[i], append = FALSE)
-        feed.count.escalc <- summary.escalc(feed.count.escalc)
-        feed.count.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-        colnames(feed.count.escalc) <- c("average.total.feed.count.per.fly.g", 
-                                         "average.total.feed.count.per.fly.var", 
-                                         "average.total.feed.count.per.fly.sei", 
-                                         "average.total.feed.count.per.fly.zi", 
-                                         "average.total.feed.count.per.fly.ci.lb",
-                                         "average.total.feed.count.per.fly.ci.ub", 
-                                         "comparison")
-        
-        # Time to first feed
-        time.to.first.feed.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                    m1i = mean.time.to.first.feed.s[i + 1], 
-                                    m2i = mean.time.to.first.feed.s[i], 
-                                    n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
-                                    sd1i = sd.time.to.first.feed.s[i + 1], 
-                                    sd2i = sd.time.to.first.feed.s[i], append = FALSE)
-        time.to.first.feed.escalc <- summary.escalc(time.to.first.feed.escalc)
-        time.to.first.feed.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-        colnames(time.to.first.feed.escalc) <- c("average.time.first.feed.per.fly.g", 
-                                         "average.time.first.feed.per.fly.var", 
-                                         "average.time.first.feed.per.fly.sei", 
-                                         "average.time.first.feed.per.fly.zi", 
-                                         "average.time.first.feed.per.fly.ci.lb",
-                                         "average.time.first.feed.per.fly.ci.ub", 
-                                         "comparison")
-        
-        # Volume Intake
-        vol.intake.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                        m1i = mean.total.vol.intake.nanoliter[i + 1], 
-                                        m2i = mean.total.vol.intake.nanoliter[i], 
-                                        n1i = total.fly.count[i + 1], 
-                                        n2i = total.fly.count[i],
-                                        sd1i = sd.mean.total.vol.intake.nanoliter[i + 1], 
-                                        sd2i = sd.mean.total.vol.intake.nanoliter[i], append = FALSE)
-        vol.intake.nanoliter.escalc <- summary.escalc(vol.intake.nanoliter.escalc)
-        vol.intake.nanoliter.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-        colnames(vol.intake.nanoliter.escalc) <- c("average.total.vol.intake.nanoliter.g", 
-                                             "average.total.vol.intake.nanoliter.var", 
-                                             "average.total.vol.intake.nanoliter.sei", 
-                                             "average.total.vol.intake.nanoliter.zi", 
-                                             "average.total.vol.intake.nanoliter.ci.lb",
-                                             "average.total.vol.intake.nanoliter.ci.ub", 
+  
+  # Reformats temp.df so that all pairwise combinations are in paired rows. 
+  # See https://www.biostars.org/p/3694/
+  temp.df <- data.frame( apply(summary.per.contrastGroup.withFood, 2, combn, m = 2) )
+  for (i in (length(contrast.columns) + 3) : (ncol(temp.df)) ) {
+    temp.df[, i] <- as.numeric( as.character(temp.df[, i]) )
+  }
+  
+  for ( i in seq(from = 1, to = nrow(temp.df), by = 2) ) {
+    # Feed Count
+    feed.count.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                m1i = mean.total.feed.count.per.fly[i + 1], 
+                                m2i = mean.total.feed.count.per.fly[i], 
+                                n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
+                                sd1i = sd.total.feed.count.per.fly[i + 1], 
+                                sd2i = sd.total.feed.count.per.fly[i], append = FALSE)
+    feed.count.escalc <- summary.escalc(feed.count.escalc)
+    feed.count.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    colnames(feed.count.escalc) <- c("average.total.feed.count.per.fly.g", 
+                                     "average.total.feed.count.per.fly.var", 
+                                     "average.total.feed.count.per.fly.sei", 
+                                     "average.total.feed.count.per.fly.zi", 
+                                     "average.total.feed.count.per.fly.ci.lb",
+                                     "average.total.feed.count.per.fly.ci.ub", 
+                                     "comparison")
+    
+    # Time to first feed
+    time.to.first.feed.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                        m1i = mean.time.to.first.feed.s[i + 1], 
+                                        m2i = mean.time.to.first.feed.s[i], 
+                                        n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
+                                        sd1i = sd.time.to.first.feed.s[i + 1], 
+                                        sd2i = sd.time.to.first.feed.s[i], append = FALSE)
+    time.to.first.feed.escalc <- summary.escalc(time.to.first.feed.escalc)
+    time.to.first.feed.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    colnames(time.to.first.feed.escalc) <- c("average.time.first.feed.per.fly.g", 
+                                             "average.time.first.feed.per.fly.var", 
+                                             "average.time.first.feed.per.fly.sei", 
+                                             "average.time.first.feed.per.fly.zi", 
+                                             "average.time.first.feed.per.fly.ci.lb",
+                                             "average.time.first.feed.per.fly.ci.ub", 
                                              "comparison")
-        # Volume per Feed
-        vol.per.feed.per.fly.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                                        m1i = mean.vol.per.feed.per.fly.nanoliter[i + 1], 
-                                                        m2i = mean.vol.per.feed.per.fly.nanoliter[i], 
-                                                        n1i = feeding.fly.count[i + 1], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
-                                                        n2i = feeding.fly.count[i], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
-                                                        sd1i = sd.vol.per.feed.per.fly.nanoliter[i + 1], 
-                                                        sd2i = sd.vol.per.feed.per.fly.nanoliter[i], append = FALSE)
-        vol.per.feed.per.fly.nanoliter.escalc <- summary.escalc(vol.per.feed.per.fly.nanoliter.escalc)
-        vol.per.feed.per.fly.nanoliter.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-        colnames(vol.per.feed.per.fly.nanoliter.escalc) <- c("average.vol.per.feed.per.fly.nanoliter.g", 
-                                                             "average.vol.per.feed.per.fly.nanoliter.var", 
-                                                             "average.vol.per.feed.per.fly.nanoliter.sei", 
-                                                             "average.vol.per.feed.per.fly.nanoliter.zi", 
-                                                             "average.vol.per.feed.per.fly.nanoliter.ci.lb",
-                                                             "average.vol.per.feed.per.fly.nanoliter.ci.ub", 
-                                                             "comparison")
-        
-        # Feeding Speed
-        mean.feeding.speed.per.fly.nl.per.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                                             m1i = mean.feeding.speed.per.fly.nl.per.s[i + 1], 
-                                                             m2i = mean.feeding.speed.per.fly.nl.per.s[i], 
-                                                             n1i = feeding.fly.count[i + 1], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
-                                                             n2i = feeding.fly.count[i], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
-                                                             sd1i = sd.feeding.speed.per.fly.nl.per.s[i + 1], 
-                                                             sd2i = sd.feeding.speed.per.fly.nl.per.s[i], append = FALSE)
-        mean.feeding.speed.per.fly.nl.per.s.escalc <- summary.escalc(mean.feeding.speed.per.fly.nl.per.s.escalc)
-        mean.feeding.speed.per.fly.nl.per.s.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-        colnames(mean.feeding.speed.per.fly.nl.per.s.escalc) <- c("average.feeding.speed.per.fly.nl.per.s.g", 
-                                                                  "average.feeding.speed.per.fly.nl.per.s.var", 
-                                                                  "average.feeding.speed.per.fly.nl.per.s.sei", 
-                                                                  "average.feeding.speed.per.fly.nl.per.s.zi", 
-                                                                  "average.feeding.speed.per.fly.nl.per.s.ci.lb",
-                                                                  "average.feeding.speed.per.fly.nl.per.s.ci.ub", 
-                                                                  "comparison")
-        
-        # Proportion of Flies Feeding
-        proportion.of.flies.feeding.escalc <- escalc(data = temp.df, measure = "RR", 
-                                                     ai = feeding.fly.count[i + 1],
-                                                     bi = total.fly.count[i + 1] - feeding.fly.count[i + 1],
-                                                     #n1i = total.fly.count[i + 1],
-                                                     ci = feeding.fly.count[i],
-                                                     di = total.fly.count[i] - feeding.fly.count[i],
-                                                     #n2i = total.fly.count[i], 
-                                                     append = FALSE)
-        proportion.of.flies.feeding.escalc <- summary.escalc(proportion.of.flies.feeding.escalc)
-        proportion.of.flies.feeding.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-        colnames(proportion.of.flies.feeding.escalc) <- c("proportion.of.flies.feeding.rr", 
-                                                          "log.proportion.of.flies.feeding.rr.var", 
-                                                          "log.proportion.of.flies.feeding.rr.sei", 
-                                                          "log.proportion.of.flies.feeding.rr.zi", 
-                                                          "proportion.of.flies.feeding.rr.ci.lb",
-                                                          "proportion.of.flies.feeding.rr.ci.ub", 
-                                                          "comparison")
-        # Convert log risk ratio to original scale.
-        for (col in c(1, 5, 6)) {
-          proportion.of.flies.feeding.escalc[col] <- exp(proportion.of.flies.feeding.escalc[col])
-        }
-        
-        # Feed Duration
-        feed.duration.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                          m1i = mean.feed.duration.s[i + 1], 
-                                          m2i = mean.feed.duration.s[i], 
+    
+    # Volume Intake
+    vol.intake.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                          m1i = mean.total.vol.intake.nanoliter[i + 1], 
+                                          m2i = mean.total.vol.intake.nanoliter[i], 
                                           n1i = total.fly.count[i + 1], 
                                           n2i = total.fly.count[i],
-                                          sd1i = sd.feed.duration.s[i + 1], 
-                                          sd2i = sd.feed.duration.s[i], append = FALSE)
-        feed.duration.s.escalc <- summary.escalc(feed.duration.s.escalc)
-        
-        ## Note the underscores for `unite`!
-        feed.duration.s.escalc$contrast.group.1 <- unite_(temp.df[i,], "contrast.group.1", contrast.columns, sep = "\n")[, "contrast.group.1"]
-        feed.duration.s.escalc$contrast.group.2 <- unite_(temp.df[i + 1,], "contrast.group.2", contrast.columns, sep = "\n")[, "contrast.group.2"]
-        feed.duration.s.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-        feed.duration.s.escalc$fixed.factor <- c
-        feed.duration.s.escalc$fixed.factor.level <- l
-        feed.duration.s.escalc$contrast.factor <- paste(contrast.columns[!contrast.columns %in% c(c)], collapse = ", ")
-        feed.duration.s.escalc$contrast.factor.reference.level <- temp.df$tempContrast[i]
-        feed.duration.s.escalc$contrast.factor.tested.level <- temp.df$tempContrast[i + 1]
-        
-        colnames(feed.duration.s.escalc) <- c("average.feed.duration.s.g", 
-                                               "average.feed.duration.s.var", 
-                                               "average.feed.duration.s.sei", 
-                                               "average.feed.duration.s.zi", 
-                                               "average.feed.duration.s.ci.lb",
-                                               "average.feed.duration.s.ci.ub", 
-                                               "contrast.group.1",
-                                               "contrast.group.2",
-                                               "comparison", 
-                                               "fixed.factor", 
-                                               "fixed.factor.level",
-                                               "contrast.factor", 
-                                               "contrast.factor.reference.level", 
-                                               "contrast.factor.tested.level")
-        #feed.duration.s.escalc[, "contrast.groups.withFoodType"] <- temp.df[, "contrast.groups.withFoodType"][i + 1]
-        
-        
-        x <- full_join(feed.duration.s.escalc, 
-                       full_join(vol.per.feed.per.fly.nanoliter.escalc, 
-                                 full_join(feed.count.escalc, 
-                                           full_join(time.to.first.feed.escalc,
-                                                     full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
-                                                               vol.intake.nanoliter.escalc, 
-                                                               by = "comparison"), 
-                                                     by = "comparison"), 
-                                           by = "comparison"), 
-                                 by = "comparison"),
-                       by = "comparison")
-        
-        summary.escalc.withFood[[paste(x$comparison)]] <- x[,c(7:14, 1:6, 15:length(x))]
-      }
+                                          sd1i = sd.mean.total.vol.intake.nanoliter[i + 1], 
+                                          sd2i = sd.mean.total.vol.intake.nanoliter[i], append = FALSE)
+    vol.intake.nanoliter.escalc <- summary.escalc(vol.intake.nanoliter.escalc)
+    vol.intake.nanoliter.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    colnames(vol.intake.nanoliter.escalc) <- c("average.total.vol.intake.nanoliter.g", 
+                                               "average.total.vol.intake.nanoliter.var", 
+                                               "average.total.vol.intake.nanoliter.sei", 
+                                               "average.total.vol.intake.nanoliter.zi", 
+                                               "average.total.vol.intake.nanoliter.ci.lb",
+                                               "average.total.vol.intake.nanoliter.ci.ub", 
+                                               "comparison")
+    # Volume per Feed
+    vol.per.feed.per.fly.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                                    m1i = mean.vol.per.feed.per.fly.nanoliter[i + 1], 
+                                                    m2i = mean.vol.per.feed.per.fly.nanoliter[i], 
+                                                    n1i = feeding.fly.count[i + 1], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
+                                                    n2i = feeding.fly.count[i], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
+                                                    sd1i = sd.vol.per.feed.per.fly.nanoliter[i + 1], 
+                                                    sd2i = sd.vol.per.feed.per.fly.nanoliter[i], append = FALSE)
+    vol.per.feed.per.fly.nanoliter.escalc <- summary.escalc(vol.per.feed.per.fly.nanoliter.escalc)
+    vol.per.feed.per.fly.nanoliter.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    colnames(vol.per.feed.per.fly.nanoliter.escalc) <- c("average.vol.per.feed.per.fly.nanoliter.g", 
+                                                         "average.vol.per.feed.per.fly.nanoliter.var", 
+                                                         "average.vol.per.feed.per.fly.nanoliter.sei", 
+                                                         "average.vol.per.feed.per.fly.nanoliter.zi", 
+                                                         "average.vol.per.feed.per.fly.nanoliter.ci.lb",
+                                                         "average.vol.per.feed.per.fly.nanoliter.ci.ub", 
+                                                         "comparison")
+    
+    # Feeding Speed
+    mean.feeding.speed.per.fly.nl.per.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                                         m1i = mean.feeding.speed.per.fly.nl.per.s[i + 1], 
+                                                         m2i = mean.feeding.speed.per.fly.nl.per.s[i], 
+                                                         n1i = feeding.fly.count[i + 1], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
+                                                         n2i = feeding.fly.count[i], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
+                                                         sd1i = sd.feeding.speed.per.fly.nl.per.s[i + 1], 
+                                                         sd2i = sd.feeding.speed.per.fly.nl.per.s[i], append = FALSE)
+    mean.feeding.speed.per.fly.nl.per.s.escalc <- summary.escalc(mean.feeding.speed.per.fly.nl.per.s.escalc)
+    mean.feeding.speed.per.fly.nl.per.s.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    colnames(mean.feeding.speed.per.fly.nl.per.s.escalc) <- c("average.feeding.speed.per.fly.nl.per.s.g", 
+                                                              "average.feeding.speed.per.fly.nl.per.s.var", 
+                                                              "average.feeding.speed.per.fly.nl.per.s.sei", 
+                                                              "average.feeding.speed.per.fly.nl.per.s.zi", 
+                                                              "average.feeding.speed.per.fly.nl.per.s.ci.lb",
+                                                              "average.feeding.speed.per.fly.nl.per.s.ci.ub", 
+                                                              "comparison")
+    
+    # Proportion of Flies Feeding
+    proportion.of.flies.feeding.escalc <- escalc(data = temp.df, measure = "RR", 
+                                                 ai = feeding.fly.count[i + 1],
+                                                 bi = total.fly.count[i + 1] - feeding.fly.count[i + 1],
+                                                 #n1i = total.fly.count[i + 1],
+                                                 ci = feeding.fly.count[i],
+                                                 di = total.fly.count[i] - feeding.fly.count[i],
+                                                 #n2i = total.fly.count[i], 
+                                                 append = FALSE)
+    proportion.of.flies.feeding.escalc <- summary.escalc(proportion.of.flies.feeding.escalc)
+    proportion.of.flies.feeding.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    colnames(proportion.of.flies.feeding.escalc) <- c("proportion.of.flies.feeding.rr", 
+                                                      "log.proportion.of.flies.feeding.rr.var", 
+                                                      "log.proportion.of.flies.feeding.rr.sei", 
+                                                      "log.proportion.of.flies.feeding.rr.zi", 
+                                                      "proportion.of.flies.feeding.rr.ci.lb",
+                                                      "proportion.of.flies.feeding.rr.ci.ub", 
+                                                      "comparison")
+    # Convert log risk ratio to original scale.
+    for (col in c(1, 5, 6)) {
+      proportion.of.flies.feeding.escalc[col] <- exp(proportion.of.flies.feeding.escalc[col])
     }
+    
+    # Feed Duration
+    feed.duration.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                     m1i = mean.feed.duration.s[i + 1], 
+                                     m2i = mean.feed.duration.s[i], 
+                                     n1i = total.fly.count[i + 1], 
+                                     n2i = total.fly.count[i],
+                                     sd1i = sd.feed.duration.s[i + 1], 
+                                     sd2i = sd.feed.duration.s[i], append = FALSE)
+    feed.duration.s.escalc <- summary.escalc(feed.duration.s.escalc)
+    
+    ## Note the underscores for `unite`!
+    feed.duration.s.escalc$reference.contrast.group <- unite_(temp.df[i,], "reference.contrast.group", contrast.columns, sep = "\n")[, "reference.contrast.group"]
+    feed.duration.s.escalc$tested.contrast.group <- unite_(temp.df[i + 1,], "tested.contrast.group", contrast.columns, sep = "\n")[, "tested.contrast.group"]
+    feed.duration.s.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    
+    colnames(feed.duration.s.escalc) <- c("average.feed.duration.s.g", 
+                                          "average.feed.duration.s.var", 
+                                          "average.feed.duration.s.sei", 
+                                          "average.feed.duration.s.zi", 
+                                          "average.feed.duration.s.ci.lb",
+                                          "average.feed.duration.s.ci.ub", 
+                                          "reference.contrast.group",
+                                          "tested.contrast.group",
+                                          "comparison")
+    
+    x <- full_join(feed.duration.s.escalc, 
+                   full_join(vol.per.feed.per.fly.nanoliter.escalc, 
+                             full_join(feed.count.escalc, 
+                                       full_join(time.to.first.feed.escalc,
+                                                 full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
+                                                           vol.intake.nanoliter.escalc, 
+                                                           by = "comparison"), 
+                                                 by = "comparison"), 
+                                       by = "comparison"), 
+                             by = "comparison"),
+                   by = "comparison")
+    
+    summary.escalc.withFood[[paste(x$comparison)]] <- x[,c(7:15, 1:6, 16:length(x))]
   }
   
   hedges.g.withFood <- do.call('rbind', summary.escalc.withFood)
   hedges.g.withFood[, "comparison"] <- NULL
   rownames(hedges.g.withFood) <- NULL
   
-  # Make sure contrast.groups.withFoodType is a factor with appropriate factor levels and order.
-#   for (c in c("contrast.group.1", "contrast.group.2")) {
-#     hedges.g.withFood[, c] <- factor( hedges.g.withFood[, c],
-#                                       levels = levels.contrast.groups.withFoodType )
-#   }
-
-  
-  # To ensure that fixed.factor.level has the same level order as reflevels!
-  all.levels <- c()
-  for (r in names(reflevels)) {
-    all.levels <- append(all.levels, reflevels[[r]])
+  # Make sure contrast.group columns are factors with appropriate factor levels and order.
+  for (c in c("reference.contrast.group", "tested.contrast.group")) {
+    hedges.g.withFood[, c] <- factor( hedges.g.withFood[, c],
+                                      levels = unique(reflevels.combis$contrast.groups.withFoodType) )
+  }
+    
+  # Make sure columns that should be numeric, are.
+  for (colnum in 3:ncol(hedges.g.withFood)) {
+    hedges.g.withFood[, colnum] <- as.numeric( as.character(hedges.g.withFood[, colnum]) )
   }
   
-  hedges.g.withFood[, "fixed.factor.level"] <- factor(hedges.g.withFood[, "fixed.factor.level"], levels = all.levels)
-  hedges.g.withFood[, "contrast.group.1"] <- factor(hedges.g.withFood[, "contrast.group.1"], levels = levels.contrast.groups.withFoodType)
-  hedges.g.withFood[, "contrast.group.2"] <- factor(hedges.g.withFood[, "contrast.group.2"], levels = levels.contrast.groups.withFoodType)
-
-    # Then round to nice significant digits.
+  # Then round to nice significant digits.
   for (c in colnames(hedges.g.withFood) ) {
     if ( is.numeric(hedges.g.withFood[, c]) && 
          abs(range(hedges.g.withFood[, c], na.rm = TRUE)[2]) < 1) {
@@ -1685,22 +1621,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
     }
   }
   
-  # If the comparison is an auto-comparison, set the CIs to zero.
-  for (r in 1:nrow(hedges.g.withFood)) {
-    if ( identical(hedges.g.withFood[r, "contrast.factor.reference.level"], hedges.g.withFood[r, "contrast.factor.tested.level"] ) ) {
-      hedges.g.withFood[r, c(12,13,
-                             18,19,
-                             24,25,
-                             30,31,
-                             36,37)] <- 0
-    }
-  }
-  
-  
-  # Removes comparisons between the same reference levels, for nice-looking tables
-  hedges.g.withFood.forTable <- hedges.g.withFood[ !(hedges.g.withFood[, "contrast.group.1"] == hedges.g.withFood[, "contrast.group.2"]), ]
-  
-  write.csv(hedges.g.withFood.forTable, file = paste(output.path, "/hedges.g.withFood.csv", sep = ""), row.names = FALSE)
+  write.csv(hedges.g.withFood, file = paste(output.path, "/hedges.g.withFood.csv", sep = ""), row.names = FALSE)
 }
 
 ```
@@ -1708,213 +1629,180 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
 ```{r HedgesG_noFood, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
 summary.escalc.noFood <- list()
 summary.per.contrastGroup.noFood <- arrange_(summary.per.contrastGroup.noFood, contrast.columns.noFoodType)
-ref.levels.noFoodType <- ref.levels[!names(ref.levels) %in% c("FoodType")]
-for (c in contrast.columns.noFoodType) {
-  for ( l in levels(summary.per.contrastGroup.noFood[, c]) ) {
-    filter_criteria = interp(~ a == b, 
-                             .values = list(a = as.name(c), 
-                                            b = l))
-    temp.df <- droplevels(filter_(summary.per.contrastGroup.noFood, .dots = filter_criteria))  
-    temp.ref <-  paste(ref.levels.noFoodType[ , -which(names(ref.levels.noFoodType) %in% c(c))], collapse = "\n")
-    t <- dplyr::select(temp.df, one_of(contrast.columns.noFoodType[!contrast.columns.noFoodType %in% c(c)]))
-    t <- dplyr::mutate(t, x = apply(t, 1, paste, collapse = "\n"))
-    temp.df[, "tempContrast"] <- as.factor(t$x)
-    
-    cols <- contrast.columns.noFoodType
-    dots <- lapply(cols, as.symbol)
 
-    # Set reference levels.
-    temp.non.ref.levels <- levels(temp.df[, "tempContrast"])[!levels(temp.df[, "tempContrast"]) %in% temp.ref]
-    temp.df[, "tempContrast"] <- factor(temp.df[, "tempContrast"]) 
-    temp.df <- arrange(temp.df, contrast.groups.noFoodType) # Do not sort after this line!!
-    
-    # Reformats temp.df so that all pairwise combinations are in paired rows. 
-    # See https://www.biostars.org/p/3694/
-    temp.df <- data.frame( apply(temp.df, 2, combn, m = 2) )
-    for (i in (length(contrast.columns.noFoodType) + 2) : (ncol(temp.df) - 1) ) {
-      temp.df[, i] <- as.numeric( as.character(temp.df[, i]) )
-    }
-    
-    for ( i in seq(from = 1, to = nrow(temp.df), by = 2) )  {
-      # Feed Count
-      feed.count.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                  m1i = mean.total.feed.count.per.fly[i + 1], 
-                                  m2i = mean.total.feed.count.per.fly[i], 
-                                  n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
-                                  sd1i = sd.total.feed.count.per.fly[i + 1], 
-                                  sd2i = sd.total.feed.count.per.fly[i], append = FALSE)
-      feed.count.escalc <- summary.escalc(feed.count.escalc)
-      feed.count.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-      colnames(feed.count.escalc) <- c("average.total.feed.count.per.fly.g", 
-                                       "average.total.feed.count.per.fly.var", 
-                                       "average.total.feed.count.per.fly.sei", 
-                                       "average.total.feed.count.per.fly.zi", 
-                                       "average.total.feed.count.per.fly.ci.lb",
-                                       "average.total.feed.count.per.fly.ci.ub", 
-                                       "comparison")
-      
-      # Time to first feed
-      time.to.first.feed.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                          m1i = mean.time.to.first.feed.s[i + 1], 
-                                          m2i = mean.time.to.first.feed.s[i], 
-                                          n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
-                                          sd1i = sd.time.to.first.feed.s[i + 1], 
-                                          sd2i = sd.time.to.first.feed.s[i], append = FALSE)
-      time.to.first.feed.escalc <- summary.escalc(time.to.first.feed.escalc)
-      time.to.first.feed.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-      colnames(time.to.first.feed.escalc) <- c("average.time.first.feed.per.fly.g", 
-                                               "average.time.first.feed.per.fly.var", 
-                                               "average.time.first.feed.per.fly.sei", 
-                                               "average.time.first.feed.per.fly.zi", 
-                                               "average.time.first.feed.per.fly.ci.lb",
-                                               "average.time.first.feed.per.fly.ci.ub", 
-                                               "comparison")
-      
-      # Volume Intake
-      vol.intake.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                      m1i = mean.total.vol.intake.nanoliter[i + 1], 
-                                      m2i = mean.total.vol.intake.nanoliter[i], 
-                                      n1i = total.fly.count[i + 1], 
-                                      n2i = total.fly.count[i],
-                                      sd1i = sd.mean.total.vol.intake.nanoliter[i + 1], 
-                                      sd2i = sd.mean.total.vol.intake.nanoliter[i], append = FALSE)
-      vol.intake.nanoliter.escalc <- summary.escalc(vol.intake.nanoliter.escalc)
-      vol.intake.nanoliter.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-      colnames(vol.intake.nanoliter.escalc) <- c("average.total.vol.intake.nanoliter.g", 
-                                           "average.total.vol.intake.nanoliter.var", 
-                                           "average.total.vol.intake.nanoliter.sei", 
-                                           "average.total.vol.intake.nanoliter.zi", 
-                                           "average.total.vol.intake.nanoliter.ci.lb",
-                                           "average.total.vol.intake.nanoliter.ci.ub", 
+# Reformats temp.df so that all pairwise combinations are in paired rows. 
+# See https://www.biostars.org/p/3694/
+temp.df <- data.frame( apply(summary.per.contrastGroup.noFood, 2, combn, m = 2) )
+for (i in (length(contrast.columns.noFoodType) + 2) : ncol(temp.df) ) {
+  temp.df[, i] <- as.numeric( as.character(temp.df[, i]) )
+}
+
+for ( i in seq(from = 1, to = nrow(temp.df), by = 2) )  {
+  # Feed Count
+  feed.count.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                              m1i = mean.total.feed.count.per.fly[i + 1], 
+                              m2i = mean.total.feed.count.per.fly[i], 
+                              n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
+                              sd1i = sd.total.feed.count.per.fly[i + 1], 
+                              sd2i = sd.total.feed.count.per.fly[i], append = FALSE)
+  feed.count.escalc <- summary.escalc(feed.count.escalc)
+  feed.count.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  colnames(feed.count.escalc) <- c("average.total.feed.count.per.fly.g", 
+                                   "average.total.feed.count.per.fly.var", 
+                                   "average.total.feed.count.per.fly.sei", 
+                                   "average.total.feed.count.per.fly.zi", 
+                                   "average.total.feed.count.per.fly.ci.lb",
+                                   "average.total.feed.count.per.fly.ci.ub", 
+                                   "comparison")
+  
+  # Time to first feed
+  time.to.first.feed.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                      m1i = mean.time.to.first.feed.s[i + 1], 
+                                      m2i = mean.time.to.first.feed.s[i], 
+                                      n1i = total.fly.count[i + 1], n2i = total.fly.count[i],
+                                      sd1i = sd.time.to.first.feed.s[i + 1], 
+                                      sd2i = sd.time.to.first.feed.s[i], append = FALSE)
+  time.to.first.feed.escalc <- summary.escalc(time.to.first.feed.escalc)
+  time.to.first.feed.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  colnames(time.to.first.feed.escalc) <- c("average.time.first.feed.per.fly.g", 
+                                           "average.time.first.feed.per.fly.var", 
+                                           "average.time.first.feed.per.fly.sei", 
+                                           "average.time.first.feed.per.fly.zi", 
+                                           "average.time.first.feed.per.fly.ci.lb",
+                                           "average.time.first.feed.per.fly.ci.ub", 
                                            "comparison")
-      # Volume per Feed
-      vol.per.feed.per.fly.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                        m1i = mean.vol.per.feed.per.fly.nanoliter[i + 1], 
-                                        m2i = mean.vol.per.feed.per.fly.nanoliter[i], 
-                                        n1i = feeding.fly.count[i + 1], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
-                                        n2i = feeding.fly.count[i], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
-                                        sd1i = sd.vol.per.feed.per.fly.nanoliter[i + 1], 
-                                        sd2i = sd.vol.per.feed.per.fly.nanoliter[i], append = FALSE)
-      vol.per.feed.per.fly.nanoliter.escalc <- summary.escalc(vol.per.feed.per.fly.nanoliter.escalc)
-      vol.per.feed.per.fly.nanoliter.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-      colnames(vol.per.feed.per.fly.nanoliter.escalc) <- c("average.vol.per.feed.per.fly.nanoliter.g", 
-                                             "average.vol.per.feed.per.fly.nanoliter.var", 
-                                             "average.vol.per.feed.per.fly.nanoliter.sei", 
-                                             "average.vol.per.feed.per.fly.nanoliter.zi", 
-                                             "average.vol.per.feed.per.fly.nanoliter.ci.lb",
-                                             "average.vol.per.feed.per.fly.nanoliter.ci.ub", 
-                                             "comparison")
-      
-      # Feeding Speed
-      mean.feeding.speed.per.fly.nl.per.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                                           m1i = mean.feeding.speed.per.fly.nl.per.s[i + 1], 
-                                                           m2i = mean.feeding.speed.per.fly.nl.per.s[i], 
-                                                           n1i = feeding.fly.count[i + 1], 
-                                                           n2i = feeding.fly.count[i],
-                                                           sd1i = sd.feeding.speed.per.fly.nl.per.s[i + 1], 
-                                                           sd2i = sd.feeding.speed.per.fly.nl.per.s[i], append = FALSE)
-      mean.feeding.speed.per.fly.nl.per.s.escalc <- summary.escalc(mean.feeding.speed.per.fly.nl.per.s.escalc)
-      mean.feeding.speed.per.fly.nl.per.s.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-      colnames(mean.feeding.speed.per.fly.nl.per.s.escalc) <- c("average.feeding.speed.per.fly.nl.per.s.g", 
-                                                                "average.feeding.speed.per.fly.nl.per.s.var", 
-                                                                "average.feeding.speed.per.fly.nl.per.s.sei", 
-                                                                "average.feeding.speed.per.fly.nl.per.s.zi", 
-                                                                "average.feeding.speed.per.fly.nl.per.s.ci.lb",
-                                                                "average.feeding.speed.per.fly.nl.per.s.ci.ub", 
-                                                                "comparison")
-      
-      # Proportion of Flies Feeding
-      proportion.of.flies.feeding.escalc <- escalc(data = temp.df, measure = "RR", 
-                                                   ai = feeding.fly.count[i + 1],
-                                                   bi = total.fly.count[i + 1] - feeding.fly.count[i + 1],
-                                                   #n1i = total.fly.count[i + 1],
-                                                   ci = feeding.fly.count[i],
-                                                   di = total.fly.count[i] - feeding.fly.count[i],
-                                                   #n2i = total.fly.count[i], 
-                                                   append = FALSE)
-      proportion.of.flies.feeding.escalc <- summary.escalc(proportion.of.flies.feeding.escalc)
-      proportion.of.flies.feeding.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-      colnames(proportion.of.flies.feeding.escalc) <- c("proportion.of.flies.feeding.rr", 
-                                                        "log.proportion.of.flies.feeding.rr.var", 
-                                                        "log.proportion.of.flies.feeding.rr.sei", 
-                                                        "log.proportion.of.flies.feeding.rr.zi", 
-                                                        "proportion.of.flies.feeding.rr.ci.lb",
-                                                        "proportion.of.flies.feeding.rr.ci.ub", 
-                                                        "comparison")
-      # Convert log risk ratio to original scale.
-      for (col in c(1, 5, 6)) {
-        proportion.of.flies.feeding.escalc[col] <- exp(proportion.of.flies.feeding.escalc[col])
-      }
-      
-      # Feed Duration
-      feed.duration.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
-                                        m1i = mean.feed.duration.s[i + 1], 
-                                        m2i = mean.feed.duration.s[i], 
+  
+  # Volume Intake
+  vol.intake.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                        m1i = mean.total.vol.intake.nanoliter[i + 1], 
+                                        m2i = mean.total.vol.intake.nanoliter[i], 
                                         n1i = total.fly.count[i + 1], 
                                         n2i = total.fly.count[i],
-                                        sd1i = sd.feed.duration.s[i + 1], 
-                                        sd2i = sd.feed.duration.s[i], append = FALSE)
-      feed.duration.s.escalc <- summary.escalc(feed.duration.s.escalc)
-      ## Note the underscores for `unite`!
-      feed.duration.s.escalc$contrast.group.1 <- unite_(temp.df[i,], "contrast.group.1", contrast.columns.noFoodType, sep = "\n")[, "contrast.group.1"]
-      feed.duration.s.escalc$contrast.group.2 <- unite_(temp.df[i + 1,], "contrast.group.2", contrast.columns.noFoodType, sep = "\n")[, "contrast.group.2"]
-      feed.duration.s.escalc$comparison <- paste(l, "\t", temp.df$tempContrast[i], " vs ", l, "\t", temp.df$tempContrast[i + 1], sep = "")
-      feed.duration.s.escalc$fixed.factor <- c
-      feed.duration.s.escalc$fixed.factor.level <- l
-      feed.duration.s.escalc$contrast.factor <- paste(contrast.columns.noFoodType[!contrast.columns.noFoodType %in% c(c)], collapse = ", ")
-      feed.duration.s.escalc$contrast.factor.reference.level <- temp.df$tempContrast[i]
-      feed.duration.s.escalc$contrast.factor.tested.level <- temp.df$tempContrast[i + 1]
-      
-      colnames(feed.duration.s.escalc) <- c("average.feed.duration.s.g", 
-                                             "average.feed.duration.s.var", 
-                                             "average.feed.duration.s.sei", 
-                                             "average.feed.duration.s.zi", 
-                                             "average.feed.duration.s.ci.lb",
-                                             "average.feed.duration.s.ci.ub", 
-                                             "contrast.group.1",
-                                             "contrast.group.2",
-                                             "comparison", 
-                                             "fixed.factor", 
-                                             "fixed.factor.level",
-                                             "contrast.factor", 
-                                             "contrast.factor.reference.level", 
-                                             "contrast.factor.tested.level")
-      #feed.duration.s.escalc[, "contrast.groups.noFoodType"] <- temp.df[, "contrast.groups.noFoodType"][i]
-      
-      x <- full_join(feed.duration.s.escalc, 
-                     full_join(vol.per.feed.per.fly.nanoliter.escalc, 
-                               full_join(feed.count.escalc, 
-                                         full_join(time.to.first.feed.escalc,
-                                                   full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
-                                                             vol.intake.nanoliter.escalc, 
-                                                             by = "comparison"),
-                                                   by = "comparison"), 
-                                         by = "comparison"),
-                               by = "comparison"), 
-                     by = "comparison")
-
-              
-      summary.escalc.noFood[[paste(x$comparison)]] <- x[,c(7:14, 1:6, 15:length(x))]
-    }
+                                        sd1i = sd.mean.total.vol.intake.nanoliter[i + 1], 
+                                        sd2i = sd.mean.total.vol.intake.nanoliter[i], append = FALSE)
+  vol.intake.nanoliter.escalc <- summary.escalc(vol.intake.nanoliter.escalc)
+  vol.intake.nanoliter.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  colnames(vol.intake.nanoliter.escalc) <- c("average.total.vol.intake.nanoliter.g", 
+                                             "average.total.vol.intake.nanoliter.var", 
+                                             "average.total.vol.intake.nanoliter.sei", 
+                                             "average.total.vol.intake.nanoliter.zi", 
+                                             "average.total.vol.intake.nanoliter.ci.lb",
+                                             "average.total.vol.intake.nanoliter.ci.ub", 
+                                             "comparison")
+  # Volume per Feed
+  vol.per.feed.per.fly.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                                  m1i = mean.vol.per.feed.per.fly.nanoliter[i + 1], 
+                                                  m2i = mean.vol.per.feed.per.fly.nanoliter[i], 
+                                                  n1i = feeding.fly.count[i + 1], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
+                                                  n2i = feeding.fly.count[i], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO FEEDING FLY COUNT.
+                                                  sd1i = sd.vol.per.feed.per.fly.nanoliter[i + 1], 
+                                                  sd2i = sd.vol.per.feed.per.fly.nanoliter[i], append = FALSE)
+  vol.per.feed.per.fly.nanoliter.escalc <- summary.escalc(vol.per.feed.per.fly.nanoliter.escalc)
+  vol.per.feed.per.fly.nanoliter.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  colnames(vol.per.feed.per.fly.nanoliter.escalc) <- c("average.vol.per.feed.per.fly.nanoliter.g", 
+                                                       "average.vol.per.feed.per.fly.nanoliter.var", 
+                                                       "average.vol.per.feed.per.fly.nanoliter.sei", 
+                                                       "average.vol.per.feed.per.fly.nanoliter.zi", 
+                                                       "average.vol.per.feed.per.fly.nanoliter.ci.lb",
+                                                       "average.vol.per.feed.per.fly.nanoliter.ci.ub", 
+                                                       "comparison")
+  
+  # Feeding Speed
+  mean.feeding.speed.per.fly.nl.per.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                                       m1i = mean.feeding.speed.per.fly.nl.per.s[i + 1], 
+                                                       m2i = mean.feeding.speed.per.fly.nl.per.s[i], 
+                                                       n1i = feeding.fly.count[i + 1], 
+                                                       n2i = feeding.fly.count[i],
+                                                       sd1i = sd.feeding.speed.per.fly.nl.per.s[i + 1], 
+                                                       sd2i = sd.feeding.speed.per.fly.nl.per.s[i], append = FALSE)
+  mean.feeding.speed.per.fly.nl.per.s.escalc <- summary.escalc(mean.feeding.speed.per.fly.nl.per.s.escalc)
+  mean.feeding.speed.per.fly.nl.per.s.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  colnames(mean.feeding.speed.per.fly.nl.per.s.escalc) <- c("average.feeding.speed.per.fly.nl.per.s.g", 
+                                                            "average.feeding.speed.per.fly.nl.per.s.var", 
+                                                            "average.feeding.speed.per.fly.nl.per.s.sei", 
+                                                            "average.feeding.speed.per.fly.nl.per.s.zi", 
+                                                            "average.feeding.speed.per.fly.nl.per.s.ci.lb",
+                                                            "average.feeding.speed.per.fly.nl.per.s.ci.ub", 
+                                                            "comparison")
+  
+  # Proportion of Flies Feeding
+  proportion.of.flies.feeding.escalc <- escalc(data = temp.df, measure = "RR", 
+                                               ai = feeding.fly.count[i + 1],
+                                               bi = total.fly.count[i + 1] - feeding.fly.count[i + 1],
+                                               #n1i = total.fly.count[i + 1],
+                                               ci = feeding.fly.count[i],
+                                               di = total.fly.count[i] - feeding.fly.count[i],
+                                               #n2i = total.fly.count[i], 
+                                               append = FALSE)
+  proportion.of.flies.feeding.escalc <- summary.escalc(proportion.of.flies.feeding.escalc)
+  proportion.of.flies.feeding.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  colnames(proportion.of.flies.feeding.escalc) <- c("proportion.of.flies.feeding.rr", 
+                                                    "log.proportion.of.flies.feeding.rr.var", 
+                                                    "log.proportion.of.flies.feeding.rr.sei", 
+                                                    "log.proportion.of.flies.feeding.rr.zi", 
+                                                    "proportion.of.flies.feeding.rr.ci.lb",
+                                                    "proportion.of.flies.feeding.rr.ci.ub", 
+                                                    "comparison")
+  # Convert log risk ratio to original scale.
+  for (col in c(1, 5, 6)) {
+    proportion.of.flies.feeding.escalc[col] <- exp(proportion.of.flies.feeding.escalc[col])
   }
+  
+  # Feed Duration
+  feed.duration.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                   m1i = mean.feed.duration.s[i + 1], 
+                                   m2i = mean.feed.duration.s[i], 
+                                   n1i = total.fly.count[i + 1], 
+                                   n2i = total.fly.count[i],
+                                   sd1i = sd.feed.duration.s[i + 1], 
+                                   sd2i = sd.feed.duration.s[i], append = FALSE)
+  feed.duration.s.escalc <- summary.escalc(feed.duration.s.escalc)
+  ## Note the underscores for `unite`!
+  feed.duration.s.escalc$reference.contrast.group <- unite_(temp.df[i,], "reference.contrast.group", contrast.columns.noFoodType, sep = "\n")[, "reference.contrast.group"]
+  feed.duration.s.escalc$tested.contrast.group <- unite_(temp.df[i + 1,], "tested.contrast.group", contrast.columns.noFoodType, sep = "\n")[, "tested.contrast.group"]
+  feed.duration.s.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  
+  colnames(feed.duration.s.escalc) <- c("average.feed.duration.s.g", 
+                                        "average.feed.duration.s.var", 
+                                        "average.feed.duration.s.sei", 
+                                        "average.feed.duration.s.zi", 
+                                        "average.feed.duration.s.ci.lb",
+                                        "average.feed.duration.s.ci.ub", 
+                                        "reference.contrast.group",
+                                        "tested.contrast.group",
+                                        "comparison")
+  
+  x <- full_join(feed.duration.s.escalc, 
+                 full_join(vol.per.feed.per.fly.nanoliter.escalc, 
+                           full_join(feed.count.escalc, 
+                                     full_join(time.to.first.feed.escalc,
+                                               full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
+                                                         vol.intake.nanoliter.escalc, 
+                                                         by = "comparison"),
+                                               by = "comparison"), 
+                                     by = "comparison"),
+                           by = "comparison"), 
+                 by = "comparison")
+  
+  
+  summary.escalc.noFood[[paste(x$comparison)]] <- x[,c(7:15, 1:6, 16:length(x))]
 }
 
 hedges.g.noFood <- do.call('rbind', summary.escalc.noFood)
 rownames(hedges.g.noFood) <- NULL
 hedges.g.noFood[, "comparison"] <- NULL
 
-# Make sure contrast.groups.withFoodType is a factor with appropriate factor levels and order.
-# hedges.g.noFood[, "contrast.groups.noFoodType"] <- factor( hedges.g.noFood[, "contrast.groups.noFoodType"] ,
-#                                                                levels = levels.contrast.groups.noFoodType )
-
-# To ensure that fixed.factor.level has the same level order as reflevels!
-all.levels <- c()
-for (r in names(reflevels)) {
-  all.levels <- append(all.levels, reflevels[[r]])
+# Make sure contrast.group columns are factors with appropriate factor levels and order.
+for (c in c("reference.contrast.group", "tested.contrast.group") ) {
+  hedges.g.noFood[, c] <- factor( hedges.g.noFood[, c],
+                                  levels = unique(reflevels.combis$contrast.groups.noFoodType) )
 }
-hedges.g.noFood[, "fixed.factor.level"] <- factor(hedges.g.noFood[, "fixed.factor.level"], levels = all.levels)
-hedges.g.noFood[, "contrast.group.1"] <- factor(hedges.g.noFood[, "contrast.group.1"], levels = levels.contrast.groups.noFoodType)
-hedges.g.noFood[, "contrast.group.2"] <- factor(hedges.g.noFood[, "contrast.group.2"], levels = levels.contrast.groups.noFoodType)
+
+# Make sure columns that should be numeric, are.
+for (colnum in 3:ncol(hedges.g.noFood)) {
+  hedges.g.noFood[, colnum] <- as.numeric( as.character(hedges.g.noFood[, colnum]) )
+}
+
 # Then round to nice significant digits.
 for (c in colnames(hedges.g.noFood) ) {
   if ( is.numeric(hedges.g.noFood[, c]) && abs(range(hedges.g.noFood[, c], na.rm = TRUE)[2]) < 1) {
@@ -1924,22 +1812,8 @@ for (c in colnames(hedges.g.noFood) ) {
   }
 }
 
-# If the comparison is an auto-comparison, set the CIs to zero.
-for (r in 1:nrow(hedges.g.noFood)) {
-  if ( identical(hedges.g.noFood[r, "contrast.factor.reference.level"], hedges.g.noFood[r, "contrast.factor.tested.level"] ) ) {
-    hedges.g.noFood[r, c(12,13,
-                           18,19,
-                           24,25,
-                           30,31,
-                           36,37)] <- 0
-  }
-}
-
-# Removes comparisons between the same reference levels, for good-looking tables.
-hedges.g.noFood.forTable <- hedges.g.noFood[ !(hedges.g.noFood[, "contrast.group.1"] == hedges.g.noFood[, "contrast.group.2"]), ]
-  
 # Write to file.
-write.csv(hedges.g.noFood.forTable, file = paste(output.path, "/hedges.g.noFood.csv", sep = ""), row.names = FALSE)
+write.csv(hedges.g.noFood, file = paste(output.path, "/hedges.g.noFood.csv", sep = ""), row.names = FALSE)
 ```
 
 ```{r PIPerFly, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
@@ -1985,7 +1859,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                          remove = FALSE)
     # Set order of levels of combined contrast groups, according to that dictated in `reference_levels.txt` and in `reflevels`.
     pi.per.fly[, "contrast.groups.noFoodType"] <-  factor(pi.per.fly[, "contrast.groups.noFoodType"], 
-                                                          levels.contrast.groups.noFoodType)
+                                                          unique(reflevels.combis$contrast.groups.noFoodType))
 }
 ```
 
@@ -2090,7 +1964,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   dots2 <- lapply(cols2, as.symbol)
   pi.per.fly.time.course[, "contrast.groups.noFoodType"] <- 
     factor( apply( select_(pi.per.fly.time.course, .dots = dots2),1, paste, collapse = "\n"),
-            levels = levels.contrast.groups.noFoodType)
+            levels = unique(reflevels.combis$contrast.groups.noFoodType))
   
   # Make sure binned time column is a numeric column.
   pi.per.fly.time.course[, n] <- as.numeric( as.character(pi.per.fly.time.course[, n]) )
@@ -2155,7 +2029,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   dots2 <- lapply(cols2, as.symbol)
   average.pi.per.contrastGroup.time.course[, "contrast.groups.noFoodType"] <- 
     factor( apply( select_(average.pi.per.contrastGroup.time.course, .dots = dots2),1, paste, collapse = "\n"),
-            levels = levels.contrast.groups.noFoodType)
+            levels = unique(reflevels.combis$contrast.groups.noFoodType))
   
     
   # Make sure binned time column is a numeric column.
@@ -2167,11 +2041,6 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 # Create a custom color scale
 # See http://novyden.blogspot.sg/2013/09/how-to-expand-color-palette-with-ggplot.html
 
-# solo.contrast.levels <- c()
-# for (c in contrast.columns) {
-#   solo.contrast.levels <- append(solo.contrast.levels, levels(rawdata.all[, c]) )
-# }
-
 levels.all <- unique(c(levels(rawdata.all[, "contrast.groups.noFoodType"]),
                        levels(rawdata.all[, "contrast.groups.withFoodType"]) ) )
 
@@ -2179,9 +2048,6 @@ levels.all <- unique(c(levels(rawdata.all[, "contrast.groups.noFoodType"]),
 customPalette <-  colorRampPalette( brewer.pal(9, "Set1") ) 
 contrast.colours <- customPalette( length(levels.all) )
 names(contrast.colours) <- levels.all
-
-# contrast.colours <- rainbow(n = length(levels.all) )
-# names(contrast.colours) <- c( levels.all )
 
 # Use the line of code below to check on suitability of palette.
 # pie(rep(1,length(levels.all)), labels = levels.all, col = contrast.colours)
@@ -2215,7 +2081,7 @@ if ( length(no.feed.flies) > 0 ) {
 
 ## Raster Plot of Feed Events
 
-```{r RasterPlotFeedEvent, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, fig.cap = "Raster Plots. A. Individual Raster Plots of Feed Events for each fly. The height of each Feed Event is proportional to the Feed Volume of that Feed. The ID for each fly is labelled on the right. B. Summed Raster Plots of sucrose feeds, and sucrose + arabinose feeds for all flies of that genotype.", results = "hide"}
+```{r RasterPlotFeedEvent, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
 
 density.plot.feed.times <- data.frame()
 plot.list <- list()
@@ -2274,7 +2140,7 @@ for ( c in levels(rawdata.all[, "contrast.groups.noFoodType"]) ) {
   
   a <- ggplot(data = droplevels(filter(rawdata.all, contrast.groups.noFoodType == c)),
               aes(x = FeedStartTimeRelative, y = Volume.nanoliter)) +
-    geom_histogram(stat ="identity", aes(colour = FoodType, 
+    geom_bar(stat ="identity", aes(colour = FoodType, 
                                          fill = FoodType)) +
     coord_cartesian(ylim = round_any(range(rawdata.all$Volume.nanoliter), 10),
                     xlim = c(0, h * 3600)) +
@@ -2298,7 +2164,7 @@ for ( c in levels(rawdata.all[, "contrast.groups.noFoodType"]) ) {
   
   b <- ggplot(data = droplevels(filter(density.plot.feed.times, contrast.groups.noFoodType == c)), 
               aes(breaks, 1)) + 
-    facet_wrap(~FoodType, ncol = 1) +
+    facet_wrap(~ FoodType, ncol = 1) +
     geom_tile(aes(fill = counts)) + 
     scale_fill_gradient(low = "darkgreen", high = "orange", 
                         limits = (round_any(range(density.plot.feed.times$counts), 10))) +
@@ -2319,9 +2185,10 @@ for ( c in levels(rawdata.all[, "contrast.groups.noFoodType"]) ) {
 plot.list[["legend.a"]] <- legend.a
 plot.list[["legend.b"]] <- legend.b
 
-plot_grid(plotlist = plot.list, 
+a <- plot_grid(plotlist = plot.list, 
           ncol = 2, rel_heights = c( rep(6, ceiling( (length(plot.list) - 2) / 2)),
                                     1) )
+ggdraw(add_sub(a, "Raster Plots. A. Individual Raster Plots of Feed Events for each fly. The height of each Feed Event is proportional to the Feed Volume of that Feed.\nThe ID for each fly is labelled on the right. B. Summed Raster Plots of sucrose feeds, and sucrose + arabinose feeds for all flies of that genotype."))
 ```
 
 \newpage
@@ -2427,37 +2294,35 @@ right <- ggplot(data = bin.per.contrastGroup.noFood,
                                           size = 1)) +
   guides(fill = FALSE, colour = FALSE)
 
-fig.label <- data.frame(label = "Panel A shows, for each contrast group, the proportion of flies that fed at least once across the entire assay duration. 
-The 95% CI for the proportion feeding is indicated by the horizontal line. Panel B shows, for each contrast group, 
-how the proportion of flies feeding changes across the assay duration. Each dot represents the proportion at a specific time bin, 
-with 95% CIs depicted by the surrounding coloured envelope. ", x = 0, y = 0)
+# bottom <- ggplot(fig.label,
+#                  aes(x, y, label = label)) +
+#   geom_text(size = 5, hjust = 0.5, vjust = 1) +
+#   coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
+#   theme(panel.grid.major = element_blank(), 
+#        panel.border = element_blank(), 
+#        axis.line = element_blank(), 
+#        axis.text.x = element_blank(), 
+#        axis.text.y = element_blank(), 
+#        axis.ticks = element_blank(), 
+#        plot.margin = unit(c(-0.5,1, 0, 0.5), "lines") ) + 
+#   xlab(NULL) + ylab(NULL)
 
-bottom <- ggplot(fig.label,
-                 aes(x, y, label = label)) +
-  geom_text(size = 5, hjust = 0.5, vjust = 1) +
-  coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
-  theme(panel.grid.major = element_blank(), 
-       panel.border = element_blank(), 
-       axis.line = element_blank(), 
-       axis.text.x = element_blank(), 
-       axis.text.y = element_blank(), 
-       axis.ticks = element_blank(), 
-       plot.margin = unit(c(-0.5,1, 0, 0.5), "lines") ) + 
-  xlab(NULL) + ylab(NULL)
+ggdraw(
+  add_sub( (ggdraw() + 
+             draw_plot(left, x = 0, y = 0.15, width = .5, height = 0.8) +
+             draw_plot(right, x = 0.5, y = 0.15, width = .5, height = 0.8) +
+             draw_plot_label(label = c("A", "B", " "), size = 25,
+                             x = c(0, 0.5, 0), y = c(0.99, 0.99, 0))),
+          label = "A. The proportion of flies that fed at least once across the entire assay duration is shown, for each contrast group.\nThe 95% CI for the proportion feeding is indicated by the horizontal line.\nB. The time course for how the proportion of flies feeding changes across the assay duration is shown, for each contrast group.\nEach dot represents the proportion at a specific time bin, with 95% CIs depicted by the surrounding coloured envelope. " )
+)
 
-ggdraw() + 
-  draw_plot(left, x = 0, y = 0.15, width = .5, height = 0.8) +
-  draw_plot(right, x = 0.5, y = 0.15, width = .5, height = 0.8) +
-  draw_plot(bottom, x = 0, y = 0, width = 1, height = .2) +
-  draw_plot_label(label = c("A", "B", " "), size = 25,
-                  x = c(0, 0.5, 0), y = c(0.99, 0.99, 0))
 ```
 
 \newpage
 
 ## Cumulative Volume Drunk Per Fly
 
-```{r CumSumDataPlot, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 20, fig.width = 15, fig.fullwidth = FALSE, fig.cap = "Cumulative Feed Volume per Fly."}
+```{r CumSumDataPlot, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 20, fig.width = 15, fig.fullwidth = FALSE}
 # maxcumsum <- data.frame()
 # for (c in levels(rawdata.all[, "FlyID.contrast.groups.withFoodType"]) ) {
 #   temp.df <- droplevels( filter(rawdata.all, FlyID.contrast.groups.withFoodType == c) )
@@ -2533,7 +2398,7 @@ rm(temp)
 
 ## Correlation of Feed Duration and Feed Volume
 
-```{r CorrelateFeedDurationFeedVolume, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = FALSE, fig.cap = "Correlation of Feed Duration and Feed Volume"}
+```{r CorrelateFeedDurationFeedVolume, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 corr <- data.frame()
 for (c in levels(rawdata.all[, "contrast.groups.withFoodType"]) ) {
   temp.df <- filter(rawdata.all, contrast.groups.withFoodType == c)
@@ -2590,7 +2455,7 @@ ggplot(data = rawdata.all,
 
 ## Correlation of Average Feed Size Per Fly, and Total Feed Count Per Fly
 
-```{r CorrelateAverageFeedSizePerFly_TotalFeedCountPerFly, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = FALSE, fig.cap = "Correlation of Average Feed Size Per Fly, and Total Feed Count Per Fly. (Does this give an indication of portion size control?"}
+```{r CorrelateAverageFeedSizePerFly_TotalFeedCountPerFly, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 corr <- data.frame()
 temp.summ <- summary.per.fly
 temp.summ[, "mean.vol.per.feed.nanoliter"][is.na(temp.summ[, "mean.vol.per.feed.nanoliter"])] <- 0
@@ -2650,7 +2515,7 @@ Preference Index (Total Feed Count) for `r reflevels[["FoodType"]][2]` is calcul
 
 The same applies for Total Feed Duration and Total Volume Intake.
 
-```{r piPlot, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = FALSE, results = "hide"}
+```{r piPlot, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
 if ( "FoodType" %in% names(reflevels) ) {
   n <- paste("bin.", as.character(bw/60), ".min", sep = "")
 
@@ -2754,31 +2619,33 @@ if ( "FoodType" %in% names(reflevels) ) {
           #axis.ticks.y = element_blank(),
           panel.grid.major = element_blank() )
   
-  fig.label <- data.frame(label = paste("Average Preference Indices for", reflevels[["FoodType"]][2] ,". 
-The PI score is computed for each fly per time bin. These scores are then averaged for each contrast group. 
-The 95% CI is shown as a surrounding envelope. A. PI by Feed Count. B. PI by Volume Intake. C. PI by Feed Duration"), 
-x = 0, y = 0)
+#   bottom <- ggplot(fig.label,
+#                    aes(x, y, label = label)) +
+#     geom_text(size = 5, hjust = 0.5, vjust = 1) +
+#     coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
+#     theme(panel.grid.major = element_blank(), 
+#           panel.border = element_blank(), 
+#           axis.line = element_blank(), 
+#           axis.text.x = element_blank(), 
+#           axis.text.y = element_blank(), 
+#           axis.ticks = element_blank(), 
+#           plot.margin = unit(c(-0.5,1, 0, 0.5), "lines") ) + 
+#     xlab(NULL) + ylab(NULL)
   
-  bottom <- ggplot(fig.label,
-                   aes(x, y, label = label)) +
-    geom_text(size = 5, hjust = 0.5, vjust = 1) +
-    coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
-    theme(panel.grid.major = element_blank(), 
-          panel.border = element_blank(), 
-          axis.line = element_blank(), 
-          axis.text.x = element_blank(), 
-          axis.text.y = element_blank(), 
-          axis.ticks = element_blank(), 
-          plot.margin = unit(c(-0.5,1, 0, 0.5), "lines") ) + 
-    xlab(NULL) + ylab(NULL)
-  
-  ggdraw() + 
+ggdraw(
+  add_sub(
+    (ggdraw() + 
     draw_plot(a, x = 0, y = 0.7, width = 1, height = 0.3) +
     draw_plot(b, x = 0, y = 0.4, width = 1, height = 0.3) +
     draw_plot(c, x = 0, y = 0.1, width = 1, height = 0.3) +
-    draw_plot(bottom, x = 0, y = 0.05, width = 1, height = 0.1) +
+    #draw_plot(bottom, x = 0, y = 0.05, width = 1, height = 0.1) +
     draw_plot_label(label = c("A", "B", "C", " "), size = 25,
-                    x = c(0, 0, 0, 0), y = c(1, 0.7, 0.4, 0))
+                    x = c(0, 0, 0, 0), y = c(1, 0.7, 0.4, 0))),
+    label = paste("Average Preference Indices for", reflevels[["FoodType"]][2] ,". 
+The PI score is computed for each fly per time bin. These scores are then averaged for each contrast group. 
+The 95% CI is shown as a surrounding envelope. A. PI by Feed Count. B. PI by Volume Intake. C. PI by Feed Duration"))
+)
+
 } else {
   print("No PI Score to report; only 1 Food Choice in experiment.")
 }
@@ -2789,7 +2656,7 @@ x = 0, y = 0)
 
 ## Binned Time Course Plots
 
-```{r TimeCourse, message = FALSE, warning = FALSE, error = FALSE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE}
+```{r TimeCourse, message = FALSE, warning = FALSE, error = FALSE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
 n <- paste("bin.", as.character(bw/60), ".min", sep = "")
 plot.properties <- list()
 plot.properties[["Feed Count"]] <- c("mean.total.feed.count.per.fly",  # see bin.per.contrastGroup.noFood
@@ -2889,28 +2756,27 @@ for (m in names(plot.properties)) {
   } else {
     x <- a + xlab(paste("Time (hours)\n", "Bin Size = ", bw/60, " min", sep = ""))
   }
+
+#   label <- ggplot(fig.label,
+#                   aes(x, y, label = label)) +
+#     geom_text(size = 5, hjust = 0.5, vjust = 1) +
+#     coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
+#     theme(panel.grid.major = element_blank(), 
+#           panel.border = element_blank(), 
+#           axis.line = element_blank(), 
+#           axis.text.x = element_blank(), 
+#           axis.text.y = element_blank(), 
+#           axis.ticks = element_blank(), 
+#           plot.margin = unit(c(-0.5,1, 0, 0.5), "lines") ) + 
+#     xlab(NULL) + ylab(NULL)
   
-  fig.label <- data.frame(label = paste("Time Course for ", m, ". The dots indicate the average in that time bin. 
+  ggdraw(
+    add_sub(
+      x, label = paste("Time Course for ", m, ". The dots indicate the average in that time bin. 
 The 95-percent confidence interval of the metric is shown by a envelope around the line. Colours 
-represent contrast groups, while the shape corresponds to the food choice. Diamonds are all food choices.", sep = ""), 
-x = 0, y = 0)
-  
-  label <- ggplot(fig.label,
-                  aes(x, y, label = label)) +
-    geom_text(size = 5, hjust = 0.5, vjust = 1) +
-    coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
-    theme(panel.grid.major = element_blank(), 
-          panel.border = element_blank(), 
-          axis.line = element_blank(), 
-          axis.text.x = element_blank(), 
-          axis.text.y = element_blank(), 
-          axis.ticks = element_blank(), 
-          plot.margin = unit(c(-0.5,1, 0, 0.5), "lines") ) + 
-    xlab(NULL) + ylab(NULL)
-  
-  ggdraw() + 
-    draw_plot(x, x = 0, y = 0.09, width = 1, height = 0.9) +
-    draw_plot(label, x = 0, y = 0.015, width = 1, height = 0.1)
+represent contrast groups, while the shape corresponds to the food choice. Diamonds are all food choices.", sep = ""))
+  )
+
 }
 
 ```
@@ -2955,7 +2821,6 @@ tt <- ttheme_default(core = list(fg_params = list(hjust = 0,
                                                   x = 0.05)),
                      colhead = list(fg_params = list(hjust = 0, x = 0.05)) )
 
-padding <- unit(0.5,"line")
 
 for (m in names(plot.properties)) {
   if ( length( levels(summary.per.fly[, "contrast.groups.noFoodType"]) ) > 1 ) {
@@ -2967,10 +2832,7 @@ for (m in names(plot.properties)) {
                              "\nchi-squared =", unname(signif(a$statistic, digits = 3)),
                              ", deg. of freedom =", unname(a$parameter),
                              "\np-value =", signif(a$p.value, 3) )
-    kw.line.noFood = textGrob(kw.line.noFood,
-                              gp = gpar(fontface = "italic", 
-                                        fontsize = 12),
-                              hjust = 0) 
+    kw.line.noFood <- textGrob(kw.line.noFood)
     
     # Dunn's Test Table NO FOOD
     d <- dunn.test(summary.per.fly[, plot.properties[[m]][1] ], 
@@ -2981,69 +2843,54 @@ for (m in names(plot.properties)) {
     d <- separate_(d, "Comparison", 
                    c("contrast.group.1", "contrast.group.2"),
                    sep = " - ")
-    d[, "contrast.group.1"] <- factor(d[, "contrast.group.1"], levels = levels.contrast.groups.noFoodType)
-    d[, "contrast.group.2"] <- factor(d[, "contrast.group.2"], levels = levels.contrast.groups.noFoodType)
+    d[, "contrast.group.1"] <- factor(d[, "contrast.group.1"], levels = unique(reflevels.combis$contrast.groups.noFoodType))
+    d[, "contrast.group.2"] <- factor(d[, "contrast.group.2"], levels = unique(reflevels.combis$contrast.groups.noFoodType))
     d[, "Adjusted\np-value"] <- as.numeric( as.character(d[, "Adjusted\np-value"]) )
     
     # Hedges' g table NO FOOD
-    g <- hedges.g.noFood[ ,c("contrast.group.1", 
-                             "contrast.group.2", 
-                             "fixed.factor.level",
-                             "contrast.factor.reference.level",
-                             "contrast.factor.tested.level",
+    g <- hedges.g.noFood[ ,c("reference.contrast.group", 
+                             "tested.contrast.group", 
                              plot.properties[[m]][2],
                              plot.properties[[m]][3],
                              plot.properties[[m]][4]) ]
-    for (c in c(3, 4, 5)) {
-      g[, c] <- gsub("\\n", "\\\t", g[, c])
-    }
-    
-    for (c in 1: nrow(g)) {
-      g[c, 6] <- paste(g[c, 6], 
-                       " [", g[c, 7], 
-                       "; ", g[c, 8],
+    for (c in 1:nrow(g)) {
+      g[c, 3] <- paste(g[c, 3], 
+                       " [", g[c, 4], 
+                       "; ", g[c, 5],
                        "]", sep = "")
     }
-    g[, 8] <- NULL
-    g[, 7] <- NULL
+    
+    g <- g[, c(1:3)]
     
     # Join them together, part 1
-    table.noFood[[m]] <- left_join(g, d, by = c("contrast.group.1", "contrast.group.2"))
-    # Rearrange columns of dataframe d.
-    d[, "to1"] <- d[, "contrast.group.2"]
-    d[, "to2"] <- d[, "contrast.group.1"]
-    d[, "contrast.group.2"] <- d[, "to2"]
-    d[, "contrast.group.1"] <- d[, "to1"]
-    d[, "to2"] <- NULL
-    d[, "to1"] <- NULL
+    table.noFood[[m]] <- left_join(g, d, by = c("reference.contrast.group" = "contrast.group.1", 
+                                                "tested.contrast.group" = "contrast.group.2"))
     # Join them together, part 2
-    table.noFood[[m]] <- left_join(table.noFood[[m]], d, by = c("contrast.group.1", "contrast.group.2"))
+    table.noFood[[m]] <- left_join(table.noFood[[m]], d, by = c("reference.contrast.group" = "contrast.group.2", 
+                                                                "tested.contrast.group" = "contrast.group.1"))
     table.noFood[[m]] <- unite_(table.noFood[[m]], "Adjusted\np-value", 
                                 c("Adjusted\np-value.x", "Adjusted\np-value.y"),
                                 sep = "")
     # format the column properly
-    table.noFood[[m]][, 7] <- gsub("\\NA", "\\", table.noFood[[m]][, 7])
-    table.noFood[[m]][, 7] <- as.numeric( as.character(table.noFood[[m]][, 7]) )
-    table.noFood[[m]][, "contrast.group.1"] <- NULL
-    table.noFood[[m]][, "contrast.group.2"] <- NULL
-    
-    colnames(table.noFood[[m]]) <- c("Fixed factor\nlevel",
-                                     "Contrast factor\nreference level",
-                                     "Contrast factor\ntested level",
+    table.noFood[[m]][, "Adjusted\np-value"] <- gsub("\\NA", "\\", table.noFood[[m]][, "Adjusted\np-value"])
+    table.noFood[[m]][, "Adjusted\np-value"] <- as.numeric( as.character(table.noFood[[m]][, "Adjusted\np-value"]) )
+
+    colnames(table.noFood[[m]]) <- c("Reference\ngroup",
+                                     "Tested\ngroup",
                                      "Hedges' g\n[95% CI]",
                                      "Post-hoc Dunn's Test\nAdjusted p-value")
     # Remove row numbers for pretty printing
     table.noFood[[m]] <- tableGrob(table.noFood[[m]], rows = rep(" ", nrow(table.noFood[[m]])), theme = tt)
-    
+
     # Add results from Kruskal-Wallis test.
+    padding <- unit(0.5, "line")
     table.noFood[[m]] <- gtable_add_rows(table.noFood[[m]], 
                                          heights = grobHeight(kw.line.noFood) + padding,
                                          pos = 0)
-    
-    table.noFood[[m]] <- gtable_add_grob(table.noFood[[m]], kw.line.noFood,
-                                         t = 1, 
-                                         l = 1, 
-                                         r = ncol(table.noFood[[m]]))
+    table.noFood[[m]] <- gtable_add_grob(table.noFood[[m]], list(kw.line.noFood),
+                                         t = 1, l = 1, r = ncol(table.noFood[[m]]))
+
+    ########################################
     
     if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
       
@@ -3054,10 +2901,7 @@ for (m in names(plot.properties)) {
                                  "\nchi-squared =", unname(signif(a$statistic, digits = 3)),
                                  ", deg. of freedom =", unname(a$parameter),
                                  "\np-value =", signif(a$p.value, 3) )
-      kw.line.withFood = textGrob(kw.line.withFood,
-                                  gp = gpar(fontface = "italic", 
-                                            fontsize = 12),
-                                  hjust = 0) 
+      kw.line.withFood = textGrob(kw.line.withFood) 
       
       # Dunn's Test Table WITH FOOD
       d <- dunn.test(summary.per.fly[, plot.properties[[m]][1] ], 
@@ -3067,52 +2911,41 @@ for (m in names(plot.properties)) {
       d <- separate_(d,  "Comparison", 
                      c("contrast.group.1", "contrast.group.2"),
                      sep = " - ")
-      d[, "contrast.group.1"] <- factor(d[, "contrast.group.1"], levels = levels.contrast.groups.withFoodType)    
-      d[, "contrast.group.2"] <- factor(d[, "contrast.group.2"], levels = levels.contrast.groups.withFoodType)    
+      d[, "contrast.group.1"] <- factor(d[, "contrast.group.1"], levels = unique(reflevels.combis$contrast.groups.withFoodType))    
+      d[, "contrast.group.2"] <- factor(d[, "contrast.group.2"], levels = unique(reflevels.combis$contrast.groups.withFoodType))    
       
       # Hedges' g table WITH FOOD
-      g <- hedges.g.withFood[ ,c("contrast.group.1", 
-                                 "contrast.group.2", 
-                                 "fixed.factor.level",
-                                 "contrast.factor.reference.level",
-                                 "contrast.factor.tested.level",
+      g <- hedges.g.withFood[ ,c("reference.contrast.group", 
+                                 "tested.contrast.group", 
                                  plot.properties[[m]][2],
                                  plot.properties[[m]][3],
                                  plot.properties[[m]][4]) ]
       
       
-      for (c in 1: nrow(g)) {
-        g[c, 6] <- paste(g[c, 6], 
-                         " [", g[c, 7], 
-                         "; ", g[c, 8],
+      for (c in 1:nrow(g)) {
+        g[c, 3] <- paste(g[c, 3], 
+                         " [", g[c, 4], 
+                         "; ", g[c, 5],
                          "]", sep = "")
       }
-      g[, 8] <- NULL
-      g[, 7] <- NULL
+      
+      g <- g[, c(1:3)]
       
       # Join them together, part 1
-      table.withFood[[m]] <- left_join(g, d, by = c("contrast.group.1", "contrast.group.2"))
-      # Rearrange columns of dataframe d.
-      d[, "to1"] <- d[, "contrast.group.2"]
-      d[, "to2"] <- d[, "contrast.group.1"]
-      d[, "contrast.group.2"] <- d[, "to2"]
-      d[, "contrast.group.1"] <- d[, "to1"]
-      d[, "to2"] <- NULL
-      d[, "to1"] <- NULL
+      table.withFood[[m]] <- left_join(g, d, by = c("reference.contrast.group" = "contrast.group.1", 
+                                                    "tested.contrast.group" = "contrast.group.2"))
       # Join them together, part 2
-      table.withFood[[m]] <- left_join(table.withFood[[m]], d, by = c("contrast.group.1", "contrast.group.2"))
+      table.withFood[[m]] <- left_join(table.withFood[[m]], d, by = c("reference.contrast.group" = "contrast.group.2", 
+                                                                      "tested.contrast.group" = "contrast.group.1"))
       table.withFood[[m]] <- unite_(table.withFood[[m]], "Adjusted\np-value", 
                                     c("Adjusted\np-value.x", "Adjusted\np-value.y"),
                                     sep = "")
       # format the column properly
-      table.withFood[[m]][, 7] <- gsub("\\NA", "\\", table.withFood[[m]][, 7])
-      table.withFood[[m]][, 7] <- as.numeric( as.character(table.withFood[[m]][, 7]) )
-      table.withFood[[m]][, "contrast.group.1"] <- NULL
-      table.withFood[[m]][, "contrast.group.2"] <- NULL
-      
-      colnames(table.withFood[[m]]) <- c("Fixed factor\nlevel",
-                                         "Contrast factor\nreference level",
-                                         "Contrast factor\ntested level",
+      table.withFood[[m]][, "Adjusted\np-value"] <- gsub("\\NA", "\\", table.withFood[[m]][, "Adjusted\np-value"])
+      table.withFood[[m]][, "Adjusted\np-value"] <- as.numeric( as.character(table.withFood[[m]][, "Adjusted\np-value"]) )
+
+      colnames(table.withFood[[m]]) <- c("Reference\ngroup",
+                                         "Tested\ngroup",
                                          "Hedges' g\n[95% CI]",
                                          "Post-hoc Dunn's Test\nAdjusted p-value")
       
@@ -3137,7 +2970,7 @@ for (m in names(plot.properties)) {
 
 ## Feed Count Summary
 
-```{r DensityDistributionFeedCount, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = FALSE, fig.cap = "Density Distribution of Total Feed Counts per Fly. The orange line indicates the mean of the distribution, while the purple line indicates the median."}
+```{r DensityDistributionFeedCount, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -3221,9 +3054,13 @@ if ("FoodType" %in% contrast.columns) {
 }
 
 if (length(plot.list) == 1) {
-  plot.list[[1]]
+  ggdraw(
+    add_sub(plot.list[[1]], label = "Density Distribution of Total Feed Counts per Fly. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 } else {
-  plot_grid(plotlist = plot.list, ncol = 1, nrow = 2)
+  ggdraw(
+    add_sub(plot_grid(plotlist = plot.list, ncol = 1, nrow = 2), label = "Density Distribution of Total Feed Counts per Fly. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 }
 ```
 
@@ -3323,10 +3160,10 @@ bottom <- ggplot(fig.label,
                          "Average\ntotal feed count\nper fly [95% CI]", 
                          "Median", "sd", "low", "high")
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns.noFoodType) + 4)] <- paste(temp.df[x, (length(contrast.columns) + 4)], 
-                                                                   " [", temp.df[x, "low"], 
-                                                                   "; ", temp.df[x, "high"],
-                                                                   "]", sep = "")
+    temp.df[x, "Average\ntotal feed count\nper fly [95% CI]"] <- paste(temp.df[x, "Average\ntotal feed count\nper fly [95% CI]"], 
+                                                                       " [", temp.df[x, "low"], 
+                                                                       "; ", temp.df[x, "high"],
+                                                                       "]", sep = "")
   }
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
@@ -3396,12 +3233,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                          "Median", "sd", "low", "high")
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns) + 4)] <- paste(temp.df[x, (length(contrast.columns) + 4)], 
-                                                        " [", temp.df[x, "low"], 
-                                                        "; ", temp.df[x, "high"],
-                                                        "]", sep = "")
+    temp.df[x, "Average\ntotal feed count\nper fly [95% CI]"] <- paste(temp.df[x, "Average\ntotal feed count\nper fly [95% CI]"], 
+                                                                       " [", temp.df[x, "low"], 
+                                                                       "; ", temp.df[x, "high"],
+                                                                       "]", sep = "")
   }
- 
+  
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
   
@@ -3433,7 +3270,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r feedCountKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, results = "hide", error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE, fig.cap = "Feed Count Pairwise post-hoc Dunn's Test with Benjamini-Hochberg adjusted p-values, and Effect Sizes"}
+```{r feedCountKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, results = "hide", error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
     grid.arrange(table.noFood[["Feed Count"]], table.withFood[["Feed Count"]], 
@@ -3457,7 +3294,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Total Volume Intake Summary
 
-```{r DensityDistributionTotalVolumeIntake, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = FALSE, fig.cap = "Density Distribution of Total Volume Intake. The orange line indicates the mean of the distribution, while the purple line indicates the median."}
+```{r DensityDistributionTotalVolumeIntake, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -3540,9 +3377,13 @@ if ("FoodType" %in% contrast.columns) {
 }
 
 if (length(plot.list) == 1) {
-  plot.list[[1]]
+  ggdraw(
+    add_sub(plot.list[[1]], label = "Density Distribution of Total Volume Intake. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 } else {
-  plot_grid(plotlist = plot.list, ncol = 1, nrow = 2)
+  ggdraw(
+    add_sub(plot_grid(plotlist = plot.list, ncol = 1, nrow = 2), label = "Density Distribution of Total Volume Intake. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 }
 ```
 
@@ -3554,7 +3395,7 @@ d <- "ci.upper.mean.total.vol.intake.nanoliter"
 ylab <- "Total Volume Intake (nl)"
 plot.title <- "Total Volume Intake Summary Plot"
 bin.width <- 1
-dot.size <- 2
+dot.size <- 8
 
 ylim <- c(0, round(1.1 * range(summary.per.fly[, a])[2]))
 
@@ -3603,9 +3444,10 @@ bottom <- ggplot(fig.label,
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
     coord_cartesian(ylim = ylim) +
-    scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 20),
-                       labels = seq(from = 0, to = ylim[2], by = 20),
-                       expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
+    scale_y_continuous(
+#       breaks = seq(from = 0, to = ylim[2], by = 20),
+#       labels = seq(from = 0, to = ylim[2], by = 20),
+      expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
     ylab(ylab) + xlab("") + 
     theme_minimal() + #ggtitle(plot.title) +
     theme( axis.text.x = element_text(size = 12),
@@ -3632,10 +3474,10 @@ bottom <- ggplot(fig.label,
                          "low", "high")
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns.noFoodType) + 4)] <- paste(temp.df[x, (length(contrast.columns) + 4)], 
-                                                        " [", temp.df[x, "low"], 
-                                                        "; ", temp.df[x, "high"],
-                                                        "]", sep = "")
+    temp.df[x, "Mean total\nVol. intake (nl)\n[95% CI]"] <- paste(temp.df[x, "Mean total\nVol. intake (nl)\n[95% CI]"], 
+                                                                  " [", temp.df[x, "low"], 
+                                                                  "; ", temp.df[x, "high"],
+                                                                  "]", sep = "")
   }
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
@@ -3675,9 +3517,10 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
     coord_cartesian(ylim = ylim) +
-    scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 20),
-                       labels = seq(from = 0, to = ylim[2], by = 20),
-                       expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
+    scale_y_continuous(
+#       breaks = seq(from = 0, to = ylim[2], by = 20),
+#       labels = seq(from = 0, to = ylim[2], by = 20),
+      expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
     ylab(ylab) + xlab("") + 
     theme_minimal() + #ggtitle(plot.title) +
     theme( axis.text.x = element_text(size = 12),
@@ -3704,10 +3547,10 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                          "low", "high")
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns) + 4)] <- paste(temp.df[x, (length(contrast.columns) + 4)], 
-                                                        " [", temp.df[x, "low"], 
-                                                        "; ", temp.df[x, "high"],
-                                                        "]", sep = "")
+    temp.df[x, "Mean total\nVol. intake (nl)\n[95% CI]"] <- paste(temp.df[x, "Mean total\nVol. intake (nl)\n[95% CI]"], 
+                                                                  " [", temp.df[x, "low"], 
+                                                                  "; ", temp.df[x, "high"],
+                                                                  "]", sep = "")
   }
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
@@ -3741,7 +3584,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r VolumeIntakeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE, fig.cap = "Average Total Volume Intake Pairwise post-hoc Dunn's Test with Benjamini-Hochberg adjusted p-values, and Effect Sizes"}
+```{r VolumeIntakeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
     grid.arrange(table.noFood[["Total Volume Intake (nl)"]], table.withFood[["Total Volume Intake (nl)"]], 
@@ -3765,7 +3608,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Time to First Feed Summary
 
-```{r DensityDistributionTimeToFirstFeed, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = FALSE, fig.cap = "Density Distribution of Time to First Feed. The orange line indicates the mean of the distribution, while the purple line indicates the median."}
+```{r DensityDistributionTimeToFirstFeed, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -3848,9 +3691,13 @@ if ("FoodType" %in% contrast.columns) {
 }
 
 if (length(plot.list) == 1) {
-  plot.list[[1]]
+  ggdraw(
+    add_sub(plot.list[[1]], label = "Density Distribution of Time to First Feed. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 } else {
-  plot_grid(plotlist = plot.list, ncol = 1, nrow = 2)
+  ggdraw(
+    add_sub(plot_grid(plotlist = plot.list, ncol = 1, nrow = 2), label = "Density Distribution of Time to First Feed. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 }
 ```
 
@@ -3926,9 +3773,9 @@ bottom <- ggplot(fig.label,
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
   
   temp.df <- summary.per.contrastGroup.noFood[, c(contrast.columns.noFoodType, "total.fly.count", "feeding.fly.count", 
-                                                    "mean.time.to.first.feed.s", 
-                                                    "median.time.to.first.feed.s", "sd.time.to.first.feed.s", 
-                                                    "ci.lower.time.to.first.feed.s","ci.upper.time.to.first.feed.s")]
+                                                  "mean.time.to.first.feed.s", 
+                                                  "median.time.to.first.feed.s", "sd.time.to.first.feed.s", 
+                                                  "ci.lower.time.to.first.feed.s","ci.upper.time.to.first.feed.s")]
   
   for (x in (length(contrast.columns.noFoodType) + 3): ncol(temp.df)) {
     temp.df[, x] <- round(temp.df[, x]/60, digits = 2)
@@ -3940,12 +3787,12 @@ bottom <- ggplot(fig.label,
                          "median\ntime to\nfirst feed (min)", "sd time to\nfirst feed (min)", 
                          "low", "high")
   
-
+  
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns.noFoodType) + 3)] <- paste(temp.df[x, (length(contrast.columns) + 3)], 
-                                                        " [", temp.df[x, "low"], 
-                                                        "; ", temp.df[x, "high"],
-                                                        "]", sep = "")
+    temp.df[x, "mean\ntime to\nfirst feed (min) [95% CI]"] <- paste(temp.df[x, "mean\ntime to\nfirst feed (min) [95% CI]"], 
+                                                                    " [", temp.df[x, "low"], 
+                                                                    "; ", temp.df[x, "high"],
+                                                                    "]", sep = "")
   }
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
@@ -4017,10 +3864,10 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns) + 3)] <- paste(temp.df[x, (length(contrast.columns) + 3)], 
-                                                        " [", temp.df[x, "low"], 
-                                                        "; ", temp.df[x, "high"],
-                                                        "]", sep = "")
+    temp.df[x, "mean\ntime to\nfirst feed (min) [95% CI]"] <- paste(temp.df[x, "mean\ntime to\nfirst feed (min) [95% CI]"], 
+                                                                    " [", temp.df[x, "low"], 
+                                                                    "; ", temp.df[x, "high"],
+                                                                    "]", sep = "")
   }
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
@@ -4054,7 +3901,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r TimeToFirstFeedKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE, fig.cap = "Time to First Feed Pairwise post-hoc Dunn's Test with Benjamini-Hochberg adjusted p-values, and Effect Sizes"}
+```{r TimeToFirstFeedKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
     grid.arrange(table.noFood[["Time To First Feed (s)"]], table.withFood[["Time To First Feed (s)"]], 
@@ -4078,7 +3925,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Feed Size (aka Meal Size) per Fly Summary
 
-```{r DensityDistributionFeedSizePerFly, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = FALSE, fig.cap = "Density Distribution of Feed Size Per Fly. The orange line indicates the mean of the distribution, while the purple line indicates the median."}
+```{r DensityDistributionFeedSizePerFly, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -4161,9 +4008,13 @@ if ("FoodType" %in% contrast.columns) {
 }
 
 if (length(plot.list) == 1) {
-  plot.list[[1]]
+  ggdraw(
+    add_sub(plot.list[[1]], label = "Density Distribution of Feed Size per Fly. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 } else {
-  plot_grid(plotlist = plot.list, ncol = 1, nrow = 2)
+  ggdraw(
+    add_sub(plot_grid(plotlist = plot.list, ncol = 1, nrow = 2), label = "Density Distribution of Feed Size per Fly. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 }
 ```
 
@@ -4175,7 +4026,7 @@ d <- "ci.upper.vol.per.feed.per.fly.nanoliter"
 ylab <- "Average Feed Size per Fly (nl)"
 plot.title <- "Average Feed Size per Fly\nSummary Plot"
 bin.width <- 0.25
-dot.size <- 1
+dot.size <- 8
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.vol.per.feed.nanoliter"], na.rm = TRUE)[2])
 
@@ -4224,9 +4075,10 @@ bottom <- ggplot(fig.label,
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
     coord_cartesian(ylim = ylim) +
-    scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 3),
-                       labels = seq(from = 0, to = ylim[2], by = 3),
-                       expand = c(0.05, 0)) + # Not sure why I have to tweak the axis expansion constant manually for this plot.
+    scale_y_continuous(
+#       breaks = seq(from = 0, to = ylim[2], by = 3),
+#       labels = seq(from = 0, to = ylim[2], by = 3),
+      expand = c(0.05, 0)) + # Not sure why I have to tweak the axis expansion constant manually for this plot.
     ylab(ylab) + xlab("") + 
     theme_minimal() + #ggtitle(plot.title) +
     theme( axis.text.x = element_text(size = 12),
@@ -4240,9 +4092,9 @@ bottom <- ggplot(fig.label,
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
   
   temp.df <- summary.per.contrastGroup.noFood[, c(contrast.columns.noFoodType, "total.fly.count", "feeding.fly.count", 
-                                                    "mean.vol.per.feed.per.fly.nanoliter", 
-                                                    "median.vol.per.feed.per.fly.nanoliter", "sd.vol.per.feed.per.fly.nanoliter", 
-                                                    "ci.lower.vol.per.feed.per.fly.nanoliter","ci.upper.vol.per.feed.per.fly.nanoliter")]
+                                                  "mean.vol.per.feed.per.fly.nanoliter", 
+                                                  "median.vol.per.feed.per.fly.nanoliter", "sd.vol.per.feed.per.fly.nanoliter", 
+                                                  "ci.lower.vol.per.feed.per.fly.nanoliter","ci.upper.vol.per.feed.per.fly.nanoliter")]
   
   colnames(temp.df) <- c(contrast.columns.noFoodType, 
                          "total\nfly count", "feeding\nfly count", 
@@ -4252,10 +4104,10 @@ bottom <- ggplot(fig.label,
   
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns.noFoodType) + 3)] <- paste(temp.df[x, (length(contrast.columns) + 3)], 
-                                                        " [", temp.df[x, "low"], 
-                                                        "; ", temp.df[x, "high"],
-                                                        "]", sep = "")
+    temp.df[x, "mean \nfeed size\nper feeding fly (nl)"] <- paste(temp.df[x, "mean \nfeed size\nper feeding fly (nl)"], 
+                                                                  " [", temp.df[x, "low"], 
+                                                                  "; ", temp.df[x, "high"],
+                                                                  "]", sep = "")
   }
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
@@ -4267,10 +4119,10 @@ bottom <- ggplot(fig.label,
   
   summ.table.noFood <- tableGrob( temp.df, rows = rep(" ", nrow(temp.df)), theme = tt )
   
-if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
-  
-  #### Make Summary Plot With Food
-  summ.plot.withFood <- ggplot() + 
+  if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
+    
+    #### Make Summary Plot With Food
+    summ.plot.withFood <- ggplot() + 
     geom_pointrange(data = temp.summary.per.contrastGroup.withFood, 
                     aes_string(x = "contrast.groups.withFoodType", 
                                y = b,
@@ -4295,9 +4147,10 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
     coord_cartesian(ylim = ylim) +
-    scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 3),
-                       labels = seq(from = 0, to = ylim[2], by = 3),
-                       expand = c(0.05, 0)) + 
+    scale_y_continuous(
+#       breaks = seq(from = 0, to = ylim[2], by = 3),
+#       labels = seq(from = 0, to = ylim[2], by = 3),
+      expand = c(0.05, 0)) + 
     ylab(ylab) + xlab("") + 
     theme_minimal() + #ggtitle(plot.title) +
     theme( axis.text.x = element_text(size = 12),
@@ -4322,10 +4175,10 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                          "low", "high")
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns) + 3)] <- paste(temp.df[x, (length(contrast.columns) + 3)], 
-                                                        " [", temp.df[x, "low"], 
-                                                        "; ", temp.df[x, "high"],
-                                                        "]", sep = "")
+    temp.df[x, "mean \nfeed size\nper feeding fly (nl)"] <- paste(temp.df[x, "mean \nfeed size\nper feeding fly (nl)"], 
+                                                                  " [", temp.df[x, "low"], 
+                                                                  "; ", temp.df[x, "high"],
+                                                                  "]", sep = "")
   }
   temp.df[, "low"] <- NULL
   temp.df[, "high"] <- NULL
@@ -4359,7 +4212,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r FeedSizeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE, fig.cap = "Feed Size Pairwise post-hoc Dunn's Test with Benjamini-Hochberg adjusted p-values, and Effect Sizes"}
+```{r FeedSizeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
     grid.arrange(table.noFood[["Feed Size per fly (nl)"]], table.withFood[["Feed Size per fly (nl)"]], 
@@ -4383,7 +4236,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Feed Duration Summary
 
-```{r DensityDistributionFeedDuration, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = FALSE, fig.cap = "Density Distribution of Feed Duration. The orange line indicates the mean of the distribution, while the purple line indicates the median."}
+```{r DensityDistributionFeedDuration, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -4466,9 +4319,13 @@ if ("FoodType" %in% contrast.columns) {
 }
 
 if (length(plot.list) == 1) {
-  plot.list[[1]]
+  ggdraw(
+    add_sub(plot.list[[1]], label = "Density Distribution of Feed Duration. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 } else {
-  plot_grid(plotlist = plot.list, ncol = 1, nrow = 2)
+  ggdraw(
+    add_sub(plot_grid(plotlist = plot.list, ncol = 1, nrow = 2), label = "Density Distribution of Feed Duration. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 }
 ```
 
@@ -4558,7 +4415,7 @@ bottom <- ggplot(fig.label,
   
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns.noFoodType) + 4)] <- paste(temp.df[x, (length(contrast.columns) + 4)], 
+    temp.df[x, "mean \nfeed duration\n (s)"] <- paste(temp.df[x, "mean \nfeed duration\n (s)"], 
                                                         " [", temp.df[x, "low"], 
                                                         "; ", temp.df[x, "high"],
                                                         "]", sep = "")
@@ -4628,7 +4485,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                          "sd (s)", "low", "high")
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns) + 4)] <- paste(temp.df[x, (length(contrast.columns) + 4)], 
+    temp.df[x, "mean \nfeed duration\n (s)"] <- paste(temp.df[x, "mean \nfeed duration\n (s)"], 
                                                         " [", temp.df[x, "low"], 
                                                         "; ", temp.df[x, "high"],
                                                         "]", sep = "")
@@ -4665,7 +4522,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r feedDurationKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE, fig.cap = "Feed Duration Pairwise post-hoc Dunn's Test with Benjamini-Hochberg adjusted p-values, and Effect Sizes"}
+```{r feedDurationKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
     grid.arrange(table.noFood[["Feed Duration (s)"]], table.withFood[["Feed Duration (s)"]], 
@@ -4689,7 +4546,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Feeding Speed Summary
 
-```{r DensityDistributionFeedingSpeed, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = FALSE, fig.cap = "Density Distribution of Feeding Speed. The orange line indicates the mean of the distribution, while the purple line indicates the median."}
+```{r DensityDistributionFeedingSpeed, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -4772,9 +4629,13 @@ if ("FoodType" %in% contrast.columns) {
 }
 
 if (length(plot.list) == 1) {
-  plot.list[[1]]
+  ggdraw(
+    add_sub(plot.list[[1]], label =  "Density Distribution of Feeding Speed. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 } else {
-  plot_grid(plotlist = plot.list, ncol = 1, nrow = 2)
+  ggdraw(
+    add_sub(plot_grid(plotlist = plot.list, ncol = 1, nrow = 2), label =  "Density Distribution of Feeding Speed. The orange line indicates the mean of the distribution, while the purple line indicates the median.")
+  )
 }
 ```
 
@@ -4786,8 +4647,8 @@ c <- "ci.lower.feeding.speed.nl.per.s"
 d <- "ci.upper.feeding.speed.nl.per.s"
 ylab <- "Feeding Speed (nl/s)"
 plot.title <- "Average Feeding Speed Summary Plot"
-bin.width <- 0.01
-dot.size <- 2.5
+bin.width <- 0.025
+dot.size <- 20
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.feeding.speed.nl.per.s"], na.rm = TRUE)[2])
 
@@ -4867,7 +4728,7 @@ bottom <- ggplot(fig.label,
   
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns.noFoodType) + 3)] <- paste(temp.df[x, (length(contrast.columns) + 3)], 
+    temp.df[x, "mean\nfeeding speed\n (nl/s)"] <- paste(temp.df[x, "mean\nfeeding speed\n (nl/s)"], 
                                                         " [", temp.df[x, "low"], 
                                                         "; ", temp.df[x, "high"],
                                                         "]", sep = "")
@@ -4940,7 +4801,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                          "sd", "low", "high")
   
   for (x in 1: nrow(temp.df)) {
-    temp.df[x, (length(contrast.columns) + 3)] <- paste(temp.df[x, (length(contrast.columns) + 3)], 
+    temp.df[x, "mean\nfeeding speed\n (nl/s)"] <- paste(temp.df[x, "mean\nfeeding speed\n (nl/s)"], 
                                                         " [", temp.df[x, "low"], 
                                                         "; ", temp.df[x, "high"],
                                                         "]", sep = "")
@@ -4977,7 +4838,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r feedingSpeedKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE, fig.cap = "Feeding Speed Pairwise post-hoc Dunn's Test with Benjamini-Hochberg adjusted p-values, and Effect Sizes"}
+```{r feedingSpeedKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
     grid.arrange(table.noFood[["Feeding Speed (nl/s)"]], table.withFood[["Feeding Speed (nl/s)"]], 
@@ -4997,7 +4858,11 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r Comparison, message = FALSE, warning = FALSE, error = FALSE, echo = FALSE, eval = FALSE, fig.height = 20, fig.width = 18, fig.fullwidth = FALSE}
+```{r Comparison, message = FALSE, warning = FALSE, error = FALSE, echo = FALSE, eval = FALSE, fig.height = 20, fig.width = 18, fig.fullwidth = TRUE}
+
+#####
+# This chunk is currently not run. I have to figure out a elegant way to display the effect sizes...
+#####
 plot.properties <- list()
 plot.properties[["Feed Count"]] <- c("total.feed.count", "mean.total.feed.count.per.fly", # see summary.per.fly, summary.per.contrastGroup.withFoodType
                                      "ci.lower.mean.total.feed.count.per.fly", "ci.upper.mean.total.feed.count.per.fly", # see summary.per.contrastGroup.withFoodType
