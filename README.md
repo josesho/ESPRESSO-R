@@ -24,11 +24,11 @@ The R Markdown file can be knitted in RStudio runnning on Windows as well, but y
     - Each line after that is a contrast factor, with the levels listed and separated by commas.
     ```
     Factor,Levels
-    Genotype,W111;Driver-Gal4,W111;UAS-TrpA1;Driver-Gal4>UAS-TrpA1
-    FoodType,Sucrose_Only,Arabinose_Only,Sucrose_and_Arabinose
-    Temperature,22,29
+    Genotype, W111;Driver-Gal4, W111;UAS-TrpA1, Driver-Gal4>UAS-TrpA1
+    FoodType, Sucrose_Only, Arabinose_Only, Sucrose_and_Arabinose
+    Temperature, 22, 29
     ```
-    - **There cannot be any spaces in any of the contrast factor names, or levels.**
+    - **There cannot be any spaces in any of the contrast factor names, or levels.** The spaces after the commas should not be there; they are shown for readibility purposes. 
     - In the above example, there are 3 contrasts: Genotype, FoodType, and Temperature. 
     - There are 3 levels for Genotype, 3 levels for Foodtype, and 2 levels for Temperature.
     - **The first level listed for each contrast is the reference level.**
