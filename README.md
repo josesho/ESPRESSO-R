@@ -44,7 +44,7 @@ The R Markdown file can be knitted in RStudio runnning on Windows as well, but y
     ```
 7. Set the working directory in R to this new folder you have created with:
     ```r
-    > setwd("path/to/directory")
+    setwd("path/to/directory")
     ```
 8. Open the R Markdown file and edit the chunk titled `setVariables` (lines 11 to 18).
     ```r
