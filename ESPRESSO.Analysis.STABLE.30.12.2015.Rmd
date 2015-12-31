@@ -3923,7 +3923,9 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 \newpage
 
-## Feed Size (aka Meal Size) per Fly Summary
+## Feed Size (aka Meal Size) Summary
+
+The section calculates averages in two different ways: at the level of individual flies, and at the level of contrast groups. For more information see this [Google spreadsheet](https://docs.google.com/spreadsheets/d/19mGXNM_dSc_Y3y5jy4Zm8LFybiSITK4EZ-GP9L-vAJY/edit#gid=0)
 
 ```{r DensityDistributionFeedSizePerFly, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
@@ -4230,6 +4232,201 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   } else if ( length(levels(summary.per.fly[, "contrast.groups.noFoodType"])) == 1 )  {
   print("No experimental contrasts; no Kruskal-Wallis ANOVA can be performed.")
 }
+```
+
+```{r FeedSizeSummaryPlot_And_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+a <- "mean.vol.per.feed.nanoliter" # from summary.per.fly
+b <- "mean.vol.per.feed.nanoliter" # from summary.per.contrastGroup.withFood
+c <- "ci.lower.vol.per.feed.nanoliter"
+d <- "ci.upper.vol.per.feed.nanoliter"
+ylab <- "Average Feed Size (nl)"
+plot.title <- "Average Feed Size\nSummary Plot"
+bin.width <- 0.25
+dot.size <- 8
+
+ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.vol.per.feed.nanoliter"], na.rm = TRUE)[2])
+
+#### Figure Label
+fig.label <- data.frame(label = "Average Feed Size Summary Plot. Each scatterpoint is the average feed size for a single fly. The vertical crossbar 
+indicates the average feed size (calculated at the level of the group, not the fly) for that contrast group; the horizontal crossbar 
+indicates the 95% confidence interval.", 
+                        x = 0, y = 0)
+
+bottom <- ggplot(fig.label,
+                 aes(x, y, label = label)) +
+  geom_text(size = 5, hjust = 0.5, vjust = 1) +
+  coord_cartesian(xlim = c(-0.1, 0.1), ylim = c(-0.1, 0.1)) +
+  theme(panel.grid.major = element_blank(), 
+        panel.border = element_blank(), 
+        axis.line = element_blank(), 
+        axis.text.x = element_blank(), 
+        axis.text.y = element_blank(), 
+        axis.ticks = element_blank(), 
+        plot.margin = unit(c(0, 0, 0, 0), "lines") ) + 
+  xlab(NULL) + ylab(NULL)
+
+#### Make line-range plot No Food
+  summ.plot.noFood <- ggplot() + 
+    geom_pointrange(data = temp.summary.per.contrastGroup.noFood, 
+                    aes_string(x = "contrast.groups.noFoodType", 
+                               y = b,
+                               colour = "contrast.groups.noFoodType",
+                               ymin = c,
+                               ymax = d),
+                    size = 4,
+                    shape = "|",
+                    alpha = 0.75) +
+    geom_dotplot(data = summary.per.fly, 
+                 aes_string(x = "contrast.groups.noFoodType", 
+                            y = a,
+                            shape = "FoodType",
+                            fill = "contrast.groups.noFoodType"
+                 ),
+                 binaxis = "y", 
+                 alpha = 0.25,
+                 method = "histodot",
+                 binwidth = bin.width, # Change the size of the dot by changing the size of the bin.
+                 stackdir = "center",
+                 stackratio = 1, 
+                 dotsize = dot.size) + 
+    contrastColours + contrastFills +
+    guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
+    coord_cartesian(ylim = ylim) +
+    scale_y_continuous(
+#       breaks = seq(from = 0, to = ylim[2], by = 3),
+#       labels = seq(from = 0, to = ylim[2], by = 3),
+      expand = c(0.05, 0)) + # Not sure why I have to tweak the axis expansion constant manually for this plot.
+    ylab(ylab) + xlab("") + 
+    theme_minimal() + #ggtitle(plot.title) +
+    theme( axis.text.x = element_text(size = 12),
+           axis.title = element_text(size = 16, face = "plain"),
+           axis.ticks.y = element_blank(),
+           panel.grid.major.y = element_blank(),
+           panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
+    coord_flip()
+  
+  #### Make Summary Table No Food
+  summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
+  
+  temp.df <- summary.per.contrastGroup.noFood[, c(contrast.columns.noFoodType, "total.fly.count", "feeding.fly.count", 
+                                                  "mean.vol.per.feed.nanoliter", 
+                                                  "median.vol.per.feed.nanoliter", "sd.vol.per.feed.nanoliter", 
+                                                  "ci.lower.vol.per.feed.nanoliter","ci.upper.vol.per.feed.nanoliter")]
+  
+  colnames(temp.df) <- c(contrast.columns.noFoodType, 
+                         "total\nfly count", "feeding\nfly count", 
+                         "mean \nfeed size (nl)", 
+                         "median (nl)", "sd (nl) ", 
+                         "low", "high")
+  
+  
+  for (x in 1: nrow(temp.df)) {
+    temp.df[x, "mean \nfeed size (nl)"] <- paste(temp.df[x, "mean \nfeed size (nl)"], 
+                                                                  " [", temp.df[x, "low"], 
+                                                                  "; ", temp.df[x, "high"],
+                                                                  "]", sep = "")
+  }
+  temp.df[, "low"] <- NULL
+  temp.df[, "high"] <- NULL
+  
+  tt <- ttheme_default(core = list(fg_params = list(hjust = 0, 
+                                                    x = 0.05)),
+                       colhead = list(fg_params = list(hjust = 0, x = 0.05))
+  )
+  
+  summ.table.noFood <- tableGrob( temp.df, rows = rep(" ", nrow(temp.df)), theme = tt )
+  
+  if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
+    
+    #### Make Summary Plot With Food
+    summ.plot.withFood <- ggplot() + 
+    geom_pointrange(data = temp.summary.per.contrastGroup.withFood, 
+                    aes_string(x = "contrast.groups.withFoodType", 
+                               y = b,
+                               colour = "contrast.groups.withFoodType",
+                               ymin = c,
+                               ymax = d),
+                    size = 4,
+                    shape = "|",
+                    alpha = 0.75) +
+    geom_dotplot(data = summary.per.fly, 
+                 aes_string(x = "contrast.groups.withFoodType", 
+                            y = a,
+                            fill = "contrast.groups.withFoodType",
+                            shape = "FoodType"),
+                 binaxis = "y", 
+                 alpha = 0.25,
+                 method = "histodot",
+                 binwidth = bin.width, # Change the size of the dot by changing the size of the bin.
+                 stackdir = "center",
+                 stackratio = 1, 
+                 dotsize = dot.size) + 
+    contrastColours + contrastFills +
+    guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
+    coord_cartesian(ylim = ylim) +
+    scale_y_continuous(
+#       breaks = seq(from = 0, to = ylim[2], by = 3),
+#       labels = seq(from = 0, to = ylim[2], by = 3),
+      expand = c(0.05, 0)) + 
+    ylab(ylab) + xlab("") + 
+    theme_minimal() + #ggtitle(plot.title) +
+    theme( axis.text.x = element_text(size = 12),
+           axis.title = element_text(size = 16, face = "plain"),
+           axis.ticks.y = element_blank(),
+           panel.grid.major.y = element_blank(),
+           panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
+    coord_flip()
+  
+  #### Make Summary Table With Food
+  summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
+  
+  temp.df <- summary.per.contrastGroup.withFood[, c(contrast.columns, "total.fly.count", "feeding.fly.count", 
+                                                    "mean.vol.per.feed.nanoliter", 
+                                                    "median.vol.per.feed.nanoliter", "sd.vol.per.feed.nanoliter", 
+                                                    "ci.lower.vol.per.feed.nanoliter","ci.upper.vol.per.feed.nanoliter")]
+  
+  colnames(temp.df) <- c(contrast.columns, 
+                         "total\nfly count", "feeding\nfly count", 
+                         "mean \nfeed size (nl)", 
+                         "median (nl)", "sd (nl) ", 
+                         "low", "high")
+  
+  for (x in 1: nrow(temp.df)) {
+    temp.df[x, "mean \nfeed size (nl)"] <- paste(temp.df[x, "mean \nfeed size (nl)"], 
+                                                                  " [", temp.df[x, "low"], 
+                                                                  "; ", temp.df[x, "high"],
+                                                                  "]", sep = "")
+  }
+  temp.df[, "low"] <- NULL
+  temp.df[, "high"] <- NULL
+  
+  tt <- ttheme_default(core = list(fg_params = list(hjust = 0, 
+                                                    x = 0.05)),
+                       colhead = list(fg_params = list(hjust = 0, x = 0.05))
+  )
+  
+  summ.table.withFood <- tableGrob( temp.df, rows = rep(" ", nrow(temp.df)), theme = tt )
+  
+  
+  ggdraw() + 
+    draw_plot(summ.plot.withFood, x = 0, y = 0.6, width = 1, height = 0.4) +
+    draw_plot(summ.table.withFood, x = 0, y = 0.4, width = 1, height = 0.2) +
+    draw_plot(summ.plot.noFood, x = 0, y = 0.19, width = 1, height = 0.2) +
+    draw_plot(summ.table.noFood, x = 0, y = 0.03, width = 1, height = 0.2) +
+    draw_plot(bottom, x = 0, y = 0.01, width = 1, height = 0.1) +
+    draw_plot_label(label = c("A", "B", "C", "D"," "), size = 25,
+                    x = c(0, 0, 0, 0, 0), 
+                    y = c(0.99, 0.61, 0.4, 0.2, 0))
+  
+} else {
+  ggdraw() + 
+    draw_plot(summ.plot.noFood, x = 0, y = 0.45, width = 1, height = 0.5) +
+    draw_plot(summ.table.noFood, x = 0, y = 0.15, width = 1, height = 0.3) +
+    draw_plot(bottom, x = 0, y = 0.09, width = 1, height = 0.1) +
+    draw_plot_label(label = c("A", "B", " "), size = 25,
+                    x = c(0, 0, 0), y = c(0.99, 0.45, 0))
+}
+
 ```
 
 \newpage
