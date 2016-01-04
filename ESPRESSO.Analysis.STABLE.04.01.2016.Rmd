@@ -2228,7 +2228,7 @@ plot.list[["legend.b"]] <- legend.b
 a <- plot_grid(plotlist = plot.list, 
           ncol = 2, rel_heights = c( rep(6, ceiling( (length(plot.list) - 2) / 2)),
                                     1) )
-ggdraw(add_sub(a, "Raster Plots. A. Individual Raster Plots of Feed Events for each fly. The height of each Feed Event is proportional to the Feed Volume of that Feed.\nThe ID for each fly is labelled on the right. B. Summed Raster Plots of sucrose feeds, and sucrose + arabinose feeds for all flies of that genotype."))
+ggdraw(add_sub(a, "Raster Plots. A. Individual Raster Plots of Feed Events for each fly. The height of each Feed Event is proportional to the Feed Volume of that Feed.\nThe ID for each fly is labelled on the right. B. Summed Raster Plots of feeds (by food type) for all flies of that genotype."))
 ```
 
 \newpage
