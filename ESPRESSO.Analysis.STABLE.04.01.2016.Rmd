@@ -1,5 +1,5 @@
 ---
-title: "Analysis of ESPRESSO data (Stable 30.12.2015)"
+title: "Analysis of ESPRESSO data (Stable 04.01.2016)"
 author: "Your Name Goes Here"
 output: rmarkdown::tufte_handout
 ---
@@ -13,7 +13,7 @@ h <- 7 # Duration of experiment, IN HOURS. Change this if you just want to analy
 bs <- 300 # Bin size of combined density raster plot, in seconds. Anywhere between 5 min (300s) and 10 min (600s) seems to be good.
 bw <- 600 # Bin-sizes of time-course in seconds (s). Change here to change the bin size. (600s = 10 min)
 
-file.path <- c("/Users/josesho/Desktop/scratch/ESPRESSO/test")
+file.path <- c("/Users/josesho/Desktop/scratch/ESPRESSO/R48B04-Hungry")
 # Local file directory path name where data files are stored.
 ```
 
@@ -170,7 +170,7 @@ for (i in 1:length(metadata.list)) {
 }
 ```
 
-```{r CalculateRelativeTimeCombineFeedLog, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r CalculateRelativeTimeCombineFeedLog, message = FALSE, error = FALSE, echo = FALSE, eval = TRUE}
 for (i in 1:length(feedlog.list)) {
   
   # Handle StartTime
@@ -211,7 +211,7 @@ for (i in 1:length(feedlog.list)) {
     
     # time.vector <- rep(AssayStartTimeAbsolute, nrow(feedlog.list[[i]]))
     # Obtain FeedStartTimeRelative (relative to Assay Start Time, which is t = 0.)
-    feedlog.list[[i]][, "RelativeTime.s"] <- feedlog.list[[i]][, "StartTime"] - AssayStartTimeAbsolute
+    feedlog.list[[i]][, "RelativeTime.s"] <- as.numeric( as.duration(feedlog.list[[i]][, "StartTime"] - AssayStartTimeAbsolute) )
     
     if ( length(feedlog.list[[i]][, "RelativeTime.s"][is.na(feedlog.list[[i]][, "RelativeTime.s"])]) > 0) {
       stop("FeedStartTimeRelative not being calculated correctly. Check the format of the StartTime column.")
@@ -1496,7 +1496,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
                                                "average.total.vol.intake.nanoliter.ci.lb",
                                                "average.total.vol.intake.nanoliter.ci.ub", 
                                                "comparison")
-    # Volume per Feed
+    # Volume per Feed Per Fly
     vol.per.feed.per.fly.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
                                                     m1i = mean.vol.per.feed.per.fly.nanoliter[i + 1], 
                                                     m2i = mean.vol.per.feed.per.fly.nanoliter[i], 
@@ -1513,6 +1513,24 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
                                                          "average.vol.per.feed.per.fly.nanoliter.ci.lb",
                                                          "average.vol.per.feed.per.fly.nanoliter.ci.ub", 
                                                          "comparison")
+    
+    # Volume per Feed 
+    vol.per.feed.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                                    m1i = mean.vol.per.feed.nanoliter[i + 1], 
+                                                    m2i = mean.vol.per.feed.nanoliter[i], 
+                                                    n1i = sum.feed.count[i + 1], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO SUM FEED COUNT.
+                                                    n2i = sum.feed.count[i], # NOTE THE CHANGE FROM TOTAL FLY COUNT TO SUM FEED COUNT.
+                                                    sd1i = sd.vol.per.feed.nanoliter[i + 1], 
+                                                    sd2i = sd.vol.per.feed.nanoliter[i], append = FALSE)
+    vol.per.feed.nanoliter.escalc <- summary.escalc(vol.per.feed.nanoliter.escalc)
+    vol.per.feed.nanoliter.escalc$comparison <-  paste(temp.df$contrast.groups.withFoodType[i], " vs ", "\t", temp.df$contrast.groups.withFoodType[i + 1], sep = "")
+    colnames(vol.per.feed.nanoliter.escalc) <- c("average.vol.per.feed.nanoliter.g", 
+                                                 "average.vol.per.feed.nanoliter.var", 
+                                                 "average.vol.per.feed.nanoliter.sei", 
+                                                 "average.vol.per.feed.nanoliter.zi", 
+                                                 "average.vol.per.feed.nanoliter.ci.lb",
+                                                 "average.vol.per.feed.nanoliter.ci.ub", 
+                                                 "comparison")
     
     # Feeding Speed
     mean.feeding.speed.per.fly.nl.per.s.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
@@ -1582,11 +1600,13 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
     
     x <- full_join(feed.duration.s.escalc, 
                    full_join(vol.per.feed.per.fly.nanoliter.escalc, 
-                             full_join(feed.count.escalc, 
-                                       full_join(time.to.first.feed.escalc,
-                                                 full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
-                                                           vol.intake.nanoliter.escalc, 
-                                                           by = "comparison"), 
+                             full_join(vol.per.feed.nanoliter.escalc,
+                                       full_join(feed.count.escalc, 
+                                                 full_join(time.to.first.feed.escalc,
+                                                           full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
+                                                                     vol.intake.nanoliter.escalc, 
+                                                                     by = "comparison"), 
+                                                           by = "comparison"),
                                                  by = "comparison"), 
                                        by = "comparison"), 
                              by = "comparison"),
@@ -1689,7 +1709,7 @@ for ( i in seq(from = 1, to = nrow(temp.df), by = 2) )  {
                                              "average.total.vol.intake.nanoliter.ci.lb",
                                              "average.total.vol.intake.nanoliter.ci.ub", 
                                              "comparison")
-  # Volume per Feed
+  # Volume per Feed per Fly
   vol.per.feed.per.fly.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
                                                   m1i = mean.vol.per.feed.per.fly.nanoliter[i + 1], 
                                                   m2i = mean.vol.per.feed.per.fly.nanoliter[i], 
@@ -1705,6 +1725,24 @@ for ( i in seq(from = 1, to = nrow(temp.df), by = 2) )  {
                                                        "average.vol.per.feed.per.fly.nanoliter.zi", 
                                                        "average.vol.per.feed.per.fly.nanoliter.ci.lb",
                                                        "average.vol.per.feed.per.fly.nanoliter.ci.ub", 
+                                                       "comparison")
+  
+  # Volume per Feed
+  vol.per.feed.nanoliter.escalc <- escalc(data = temp.df, measure = "SMD", vtype = "UB", 
+                                                  m1i = mean.vol.per.feed.nanoliter[i + 1], 
+                                                  m2i = mean.vol.per.feed.nanoliter[i], 
+                                                  n1i = sum.feed.count[i + 1], # NOTE THE CHANGE FROM FLY COUNT TO FEED COUNT.
+                                                  n2i = sum.feed.count[i], # NOTE THE CHANGE FROM FLY COUNT TO FEED COUNT.
+                                                  sd1i = sd.vol.per.feed.nanoliter[i + 1], 
+                                                  sd2i = sd.vol.per.feed.nanoliter[i], append = FALSE)
+  vol.per.feed.nanoliter.escalc <- summary.escalc(vol.per.feed.nanoliter.escalc)
+  vol.per.feed.nanoliter.escalc$comparison <- paste(temp.df$contrast.groups.noFoodType[i], " vs ", temp.df$contrast.groups.noFoodType[i + 1], sep = "")
+  colnames(vol.per.feed.nanoliter.escalc) <- c("average.vol.per.feed.nanoliter.g", 
+                                                       "average.vol.per.feed.nanoliter.var", 
+                                                       "average.vol.per.feed.nanoliter.sei", 
+                                                       "average.vol.per.feed.nanoliter.zi", 
+                                                       "average.vol.per.feed.nanoliter.ci.lb",
+                                                       "average.vol.per.feed.nanoliter.ci.ub", 
                                                        "comparison")
   
   # Feeding Speed
@@ -1774,10 +1812,12 @@ for ( i in seq(from = 1, to = nrow(temp.df), by = 2) )  {
   
   x <- full_join(feed.duration.s.escalc, 
                  full_join(vol.per.feed.per.fly.nanoliter.escalc, 
-                           full_join(feed.count.escalc, 
-                                     full_join(time.to.first.feed.escalc,
-                                               full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
-                                                         vol.intake.nanoliter.escalc, 
+                           full_join(vol.per.feed.nanoliter.escalc,
+                                     full_join(feed.count.escalc, 
+                                               full_join(time.to.first.feed.escalc,
+                                                         full_join(mean.feeding.speed.per.fly.nl.per.s.escalc,
+                                                                   vol.intake.nanoliter.escalc, 
+                                                                   by = "comparison"),
                                                          by = "comparison"),
                                                by = "comparison"), 
                                      by = "comparison"),
@@ -2816,6 +2856,13 @@ plot.properties[["Feeding Speed (nl/s)"]] <- c("mean.feeding.speed.nl.per.s",
                                             "average.feeding.speed.per.fly.nl.per.s.ci.lb", 
                                             "average.feeding.speed.per.fly.nl.per.s.ci.ub")
 
+temp.rawdata <- filter(rawdata.all, !is.na(StartTime))
+plot.properties[["Average Feed Size (nl)"]] <- c("Volume.mm3", # For this one, see temp.rawdata.all instead.
+                                                 "average.vol.per.feed.nanoliter.g",
+                                                 "average.vol.per.feed.nanoliter.ci.lb", 
+                                                 "average.vol.per.feed.nanoliter.ci.ub") 
+
+
 # parameters for a nice-looking table.
 tt <- ttheme_default(core = list(fg_params = list(hjust = 0, 
                                                   x = 0.05)),
@@ -2826,8 +2873,15 @@ for (m in names(plot.properties)) {
   if ( length( levels(summary.per.fly[, "contrast.groups.noFoodType"]) ) > 1 ) {
     
     # Kruskal-Wallis Test NO FOOD
-    a <- kruskal.test(summary.per.fly[, plot.properties[[m]][1] ], 
+   
+    if (m == "Average Feed Size (nl)") {
+      a <- kruskal.test(temp.rawdata[, plot.properties[[m]][1] ], 
+                      temp.rawdata[, "contrast.groups.noFoodType"])
+    } else {
+       a <- kruskal.test(summary.per.fly[, plot.properties[[m]][1] ], 
                       summary.per.fly[, "contrast.groups.noFoodType"])
+    }
+    
     kw.line.noFood <- paste( a$method, 
                              "\nchi-squared =", unname(signif(a$statistic, digits = 3)),
                              ", deg. of freedom =", unname(a$parameter),
@@ -2835,8 +2889,14 @@ for (m in names(plot.properties)) {
     kw.line.noFood <- textGrob(kw.line.noFood)
     
     # Dunn's Test Table NO FOOD
-    d <- dunn.test(summary.per.fly[, plot.properties[[m]][1] ], 
-                   summary.per.fly[, "contrast.groups.noFoodType"], method = "bh")
+    if (m == "Average Feed Size (nl)") {
+      d <- dunn.test(temp.rawdata[, plot.properties[[m]][1] ], 
+                      temp.rawdata[, "contrast.groups.noFoodType"], method ="bh")
+    } else {
+      d <- dunn.test(summary.per.fly[, plot.properties[[m]][1] ], 
+                     summary.per.fly[, "contrast.groups.noFoodType"], method = "bh")
+    }
+    
     d <- data.frame(cbind(d$comparisons, signif(d$P.adjusted, digits = 3)))
     colnames(d) <- c("Comparison", "Adjusted\np-value")
     #d[, 1] <- gsub("\\n", "\\\t", d[, 1])
@@ -2895,8 +2955,15 @@ for (m in names(plot.properties)) {
     if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
       
       # Kruskal-Wallis Test WITH FOOD
-      a <- kruskal.test(summary.per.fly[, plot.properties[[m]][1] ], 
+
+      if (m == "Average Feed Size (nl)") {
+        a <- kruskal.test(temp.rawdata[, plot.properties[[m]][1] ], 
+                          temp.rawdata[, "contrast.groups.withFoodType"])
+      } else {
+              a <- kruskal.test(summary.per.fly[, plot.properties[[m]][1] ], 
                         summary.per.fly[, "contrast.groups.withFoodType"])
+      }
+      
       kw.line.withFood <- paste( a$method, 
                                  "\nchi-squared =", unname(signif(a$statistic, digits = 3)),
                                  ", deg. of freedom =", unname(a$parameter),
@@ -2904,8 +2971,14 @@ for (m in names(plot.properties)) {
       kw.line.withFood = textGrob(kw.line.withFood) 
       
       # Dunn's Test Table WITH FOOD
-      d <- dunn.test(summary.per.fly[, plot.properties[[m]][1] ], 
-                     summary.per.fly[, "contrast.groups.withFoodType"], method = "bh")
+      if (m == "Average Feed Size (nl)") {
+        d <- dunn.test(temp.rawdata[, plot.properties[[m]][1] ], 
+                       temp.rawdata[, "contrast.groups.withFoodType"], method ="bh")
+      } else {
+        d <- dunn.test(summary.per.fly[, plot.properties[[m]][1] ], 
+                       summary.per.fly[, "contrast.groups.withFoodType"], method = "bh")
+      }
+
       d <- data.frame(cbind(d$comparisons, signif(d$P.adjusted, digits = 3)))
       colnames(d) <- c("Comparison", "Adjusted\np-value")
       d <- separate_(d,  "Comparison", 
@@ -3395,7 +3468,7 @@ d <- "ci.upper.mean.total.vol.intake.nanoliter"
 ylab <- "Total Volume Intake (nl)"
 plot.title <- "Total Volume Intake Summary Plot"
 bin.width <- 1
-dot.size <- 8
+dot.size <- 1
 
 ylim <- c(0, round(1.1 * range(summary.per.fly[, a])[2]))
 
@@ -4028,7 +4101,7 @@ d <- "ci.upper.vol.per.feed.per.fly.nanoliter"
 ylab <- "Average Feed Size per Fly (nl)"
 plot.title <- "Average Feed Size per Fly\nSummary Plot"
 bin.width <- 0.25
-dot.size <- 8
+dot.size <- 1
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.vol.per.feed.nanoliter"], na.rm = TRUE)[2])
 
@@ -4214,18 +4287,18 @@ bottom <- ggplot(fig.label,
 
 ```
 
-```{r FeedSizeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
+```{r FeedSizePerFlyKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
     grid.arrange(table.noFood[["Feed Size per fly (nl)"]], table.withFood[["Feed Size per fly (nl)"]], 
                  nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Feed Size\nPairwise Comparisons",
+                 top = textGrob("Average Feed Size Per Fly\nPairwise Comparisons",
                                 gp = gpar(fontface = "bold", 
                                           fontsize = 20),
                                 vjust = 1) ) 
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
     grid.arrange(table.noFood[["Feed Size per fly (nl)"]],
-                 top = textGrob("Average Feed Size\nPairwise Comparisons",
+                 top = textGrob("Average Feed Size Per Fly\nPairwise Comparisons",
                                 gp = gpar(fontface = "bold", 
                                           fontsize = 20),
                                 vjust = 1) )
@@ -4242,7 +4315,7 @@ d <- "ci.upper.vol.per.feed.nanoliter"
 ylab <- "Average Feed Size (nl)"
 plot.title <- "Average Feed Size\nSummary Plot"
 bin.width <- 0.25
-dot.size <- 8
+dot.size <- 1
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.vol.per.feed.nanoliter"], na.rm = TRUE)[2])
 
@@ -4429,6 +4502,25 @@ bottom <- ggplot(fig.label,
 
 ```
 
+```{r FeedSizeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
+if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
+
+    grid.arrange(table.noFood[["Average Feed Size (nl)"]], table.withFood[["Average Feed Size (nl)"]], 
+                 nrow = 2, heights = c(0.5, 1.5),
+                 top = textGrob("Average Feed Size\nPairwise Comparisons",
+                                gp = gpar(fontface = "bold", 
+                                          fontsize = 20),
+                                vjust = 1) ) 
+  } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
+    grid.arrange(table.noFood[["Average Feed Size (nl)"]],
+                 top = textGrob("Average Feed Size\nPairwise Comparisons",
+                                gp = gpar(fontface = "bold", 
+                                          fontsize = 20),
+                                vjust = 1) )
+  } else if ( length(levels(summary.per.fly[, "contrast.groups.noFoodType"])) == 1 )  {
+  print("No experimental contrasts; no Kruskal-Wallis ANOVA can be performed.")
+}
+```
 \newpage
 
 ## Feed Duration Summary
@@ -4845,7 +4937,7 @@ d <- "ci.upper.feeding.speed.nl.per.s"
 ylab <- "Feeding Speed (nl/s)"
 plot.title <- "Average Feeding Speed Summary Plot"
 bin.width <- 0.025
-dot.size <- 20
+dot.size <- 1
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.feeding.speed.nl.per.s"], na.rm = TRUE)[2])
 
