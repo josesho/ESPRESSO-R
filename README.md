@@ -59,6 +59,7 @@ The R Markdown file can be knitted in RStudio runnning on Windows as well, but y
 9. If this is your first time running the R Markdown file, you will need to install several R packages. To do this you simply need to run the chunk titled `installPackages`. 
     - This is done by placing the cursor anywhere within the chunk and hitting `Command-Enter` (`Control-Enter` on Windows).
 10. Knit a PDF file by clicking the Knit button (alternatively, `File > Knit` or `Shift-Command-K`). 
+11. The script will also create a subfolder "Figures", with each plot rendered as a seperate PDF.
 
 ## Troubleshooting
 - *"Error in line 1867"*

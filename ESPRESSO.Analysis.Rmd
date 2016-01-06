@@ -1,5 +1,5 @@
 ---
-title: "Analysis of ESPRESSO data (Stable 04.01.2016)"
+title: "Analysis of ESPRESSO data (Stable 06.01.2016)"
 author: "Your Name Goes Here"
 output: rmarkdown::tufte_handout
 ---
@@ -8,16 +8,20 @@ output: rmarkdown::tufte_handout
 
 *Describe your hypothesis and experimental details here.*
 
-```{r setVariables, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r setVariables, echo = FALSE}
 h <- 7 # Duration of experiment, IN HOURS. Change this if you just want to analyse, say, the first 3 hours.
 bs <- 300 # Bin size of combined density raster plot, in seconds. Anywhere between 5 min (300s) and 10 min (600s) seems to be good.
 bw <- 600 # Bin-sizes of time-course in seconds (s). Change here to change the bin size. (600s = 10 min)
 
-file.path <- c("/Users/josesho/Desktop/scratch/ESPRESSO/R48B04-Hungry")
+file.path <- c("/Users/josesho/Desktop/scratch/ESPRESSO/R15A04-all")
 # Local file directory path name where data files are stored.
+
+setwd(file.path)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.path = paste(file.path, "/Figures/", sep = "") )
+# Sets options for Knitr package. You should not have to edit the two lines above.
 ```
 
-```{r installPackages, message = FALSE, error=FALSE, echo = FALSE, eval = FALSE}
+```{r installPackages, eval = FALSE}
 # For data manipulation 
 install.packages("dplyr")
 install.packages("tidyr")
@@ -55,7 +59,7 @@ install.packages("RColorBrewer")
 install.packages("xtable")
 ```
 
-```{r LoadLibraries, message = FALSE, warning = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r LoadLibraries}
 # For running Dunn's Test
 library("dunn.test")
 
@@ -98,7 +102,7 @@ library("lubridate")
 # load("~/baseLoad.RData") 
 ```
 
-```{r defFunctions, message = FALSE, error=FALSE, warning = FALSE, echo = FALSE, eval = TRUE}
+```{r defFunctions}
 # See http://stackoverflow.com/questions/12539348/ggplot-separate-legend-and-plot
 get_legend<-function(myggplot){
   tmp <- ggplot_gtable(ggplot_build(myggplot))
@@ -145,16 +149,27 @@ average <- function(data, i) {
 
 # Results 
 
-```{r LoadData, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r LoadData}
 feedlog.path <- paste(file.path, "/feedlog", sep = "")
 metadata.path <- paste(file.path, "/metadata", sep = "")
 output.path <- paste(file.path, "/output_", format(Sys.time(), "%Y-%m-%d_%H.%M.%S"), sep = "")
 dir.create(output.path) # Creates an output folder in home directory.
 
-feedlog.list <- lapply(list.files(path = feedlog.path, full.names = T), FUN = read.csv)
-names(feedlog.list) <- list.files(path = feedlog.path)
+
+# Read all metadata files into 1 list.
 metadata.list <- lapply(list.files(path = metadata.path, full.names = T), FUN = read.csv)
 names(metadata.list) <- list.files(path = metadata.path)
+
+# Check if need to use csv2
+for (i in 1:length(metadata.list)) {
+  if (ncol(metadata.list[[i]]) == 1 ) {
+    metadata.list <- lapply(list.files(path = metadata.path, full.names = T), FUN = read.csv2)
+  }
+}
+
+# Read all feedlogs into 1 list.
+feedlog.list <- lapply(list.files(path = feedlog.path, full.names = T), FUN = read.csv)
+names(feedlog.list) <- list.files(path = feedlog.path)
 
 # Check if need to use csv2
 for (i in 1:length(feedlog.list)) {
@@ -162,32 +177,108 @@ for (i in 1:length(feedlog.list)) {
     feedlog.list <- lapply(list.files(path = feedlog.path, full.names = T), FUN = read.csv2)
   }
 }
-
-for (i in 1:length(metadata.list)) {
-  if (ncol(metadata.list[[i]]) == 1 ) {
-    metadata.list <- lapply(list.files(path = metadata.path, full.names = T), FUN = read.csv2)
-  }
-}
 ```
 
-```{r CalculateRelativeTimeCombineFeedLog, message = FALSE, error = FALSE, echo = FALSE, eval = TRUE}
+```{r MetadataProcessAndCombine}
+for (i in 1:length(metadata.list)) {
+  
+  # Rename Chamber.number column as ID.
+  if ( "Chamber.number" %in% colnames(metadata.list[[i]]) ) {
+    metadata.list[[i]][, "ID"] <- metadata.list[[i]][, "Chamber.number"]
+    metadata.list[[i]][, "Chamber.number"] <- NULL
+  }
+  
+  # Then rename ID as FlyID to be consistent with feedlog.all
+  # Add column "original.ID.metadata"
+  metadata.list[[i]][, "FlyID"] <- metadata.list[[i]][, "original.FlyID.metadata"] <- metadata.list[[i]][, "ID"]
+  # So as not to confuse ourselves, also note that the FlyIDs in the feedlog differ from that in the metadata by 1.
+  metadata.list[[i]][, "original.FlyID.feedlog"] <- metadata.list[[i]][, "ID"] - 1
+  metadata.list[[i]][, "ID"] <- NULL
+  
+  # Add column with originating metadata file
+  metadata.list[[i]][,"original.metadata.file"] <- rep(names(metadata.list)[i], 
+                                                      length(metadata.list[[i]][, "FlyID"] ))
+  # Add column with feedlog file
+  metadata.list[[i]][,"original.feedlog.file"] <- rep(names(feedlog.list)[i], 
+                                                      length(metadata.list[[i]][, "FlyID"] ))
+  
+  # Then add previous number of flies from last metadata to avoid overlap of FlyIDs.
+  if (i > 1) {
+    metadata.list[[i]][, "FlyID"] <- 
+      metadata.list[[i]][, "FlyID"] + 
+      range(metadata.list[[i - 1]][, "FlyID"])[2]
+  }
+  
+#   # Determine how many feeds each fly in the metadata made.
+#   metadata.list[[i]][, "total.feed.counts"] <- rep("", length(metadata.list[[i]][, "FlyID"] ))
+#   for ( row in 1:nrow(metadata.list[[i]]) ) {
+#     temp.df <- 
+#       feedlog.list[[i]] %>%
+#       group_by(FlyID) %>%
+#       summarise( total.feed.count = length(Volume.mm3) )
+#   }
+#   
+  # Order the columns properly.
+  metadata.list[[i]] <- as.data.table( metadata.list[[i]] )
+  setcolorder(metadata.list[[i]], colnames(metadata.list[[1]]))
+  metadata.list[[i]] <- data.frame(metadata.list[[i]])
+}
+
+# Combine the metadata 
+metadata.all <- do.call('rbind', metadata.list)
+rownames(metadata.all) <- NULL
+
+# Change all columns (except `original.metadata.file`) to uppercase, to mitigate capitilization errors.
+for ( c in colnames(metadata.all)[!colnames(metadata.all) %in% c("original.metadata.file", "original.feedlog.file")] ) {
+  metadata.all[, c] <- as.factor(toupper(metadata.all[, c]))
+}
+
+
+# Write to file.
+write.csv(metadata.all, file = paste(output.path, "/metadata.all.csv", sep = ""), row.names = FALSE)
+```
+
+```{r MakeIdConversionList}
+id.conversion <- list()
+
+for (rownum in 1:nrow(metadata.all)) {
+  id.conversion[[ as.character(metadata.all[rownum, "FlyID"]) ]] <- 
+    data.frame( metadata = as.character( metadata.all[rownum, "original.FlyID.metadata"] ),
+                feedlog = as.character( metadata.all[rownum, "original.FlyID.feedlog"] ),
+                metadata.file = as.character( metadata.all[rownum, "original.metadata.file"] ),
+                feedlog.file = as.character( metadata.all[rownum, "original.feedlog.file"] ))
+}
+
+```
+
+```{r FeedlogCalculateRelativeTimeAndCombine}
 for (i in 1:length(feedlog.list)) {
   
+  # New column for originating feedlog and metdata filename
+  feedlog.list[[i]][,"original.metadata.file"] <- rep(names(metadata.list)[i], 
+                                                       length(feedlog.list[[i]][, "FlyID"] ))
+  feedlog.list[[i]][,"original.feedlog.file"] <- rep(names(feedlog.list)[i], 
+                                                      length(feedlog.list[[i]][, "FlyID"] ))
   # Handle StartTime
   feedlog.list[[i]][, "StartTime"] <- as.character(feedlog.list[[i]][, "StartTime"])
   feedlog.list[[i]][, "StartTime"] <- parse_date_time(feedlog.list[[i]][, "StartTime"], "%d/%m/%Y %H:%M:%S", tz = "")
   
+  # New column for original FlyID
+  feedlog.list[[i]][, "original.FlyID.feedlog"] <- feedlog.list[[i]][, "FlyID"]
+  feedlog.list[[i]][, "original.FlyID.metadata"] <- feedlog.list[[i]][, "FlyID"] + 1
+  
   # Add 1 to each FlyID, to match up with metadata.
   feedlog.list[[i]][, "FlyID"] <- feedlog.list[[i]][, "FlyID"] + 1
-  # Then add previous number of flies from last logfile to avoid overlap of FlyIDs.
+  
+  # Then add previous number of flies from last metadata file to avoid overlap of FlyIDs.
   if (i > 1) {
     feedlog.list[[i]][, "FlyID"] <- 
       feedlog.list[[i]][, "FlyID"] + 
-      range(feedlog.list[[i - 1]][, "FlyID"])[2]
+      range(metadata.list[[i - 1]][, "FlyID"])[2] # NOTE THAT THE RANGE FROM metadata.list IS USED HERE INSTEAD.
   }
   
   # Check if "Valid", "RelativeTime.s", and "ExperimentState" are columns.
-  new.cols <- c("Valid","RelativeTime.s","ExperimentState")
+  new.cols <- c("Valid", "RelativeTime.s", "ExperimentState")
   for (c in new.cols) {
     if ( !c %in% colnames(feedlog.list[[i]]) ) {
       feedlog.list[[i]][, c] <- rep(NA , nrow(feedlog.list[[i]]))
@@ -244,6 +335,10 @@ for (i in 1:length(feedlog.list)) {
     feedlog.list[[i]]$ChoiceIdx <- NULL
   }  
   
+  # Add column indicating the original feedlog file from which the data comes from.
+  feedlog.list[[i]]$original.feedlog.file <- rep( names(feedlog.list)[i], 
+                                                  nrow(feedlog.list[[i]]) ) 
+  
   # Order the columns properly.
   feedlog.list[[i]] <- as.data.table( feedlog.list[[i]] )
   setcolorder(feedlog.list[[i]], colnames(feedlog.list[[1]]))
@@ -254,48 +349,14 @@ for (i in 1:length(feedlog.list)) {
 
 # Combine the feedlogs.
 feedlog.all <- do.call('rbind', feedlog.list)
+
+# Save combined original data to a CSV file.
+feedlog.original <- feedlog.all
+write.csv(feedlog.original, file = paste(output.path, "/feedlog.original.combined.csv", sep = ""), row.names = FALSE)
 ```
 
-```{r ProcessAndCombineMetadata, message = FALSE, error = FALSE, echo = FALSE, eval = TRUE}
-for (i in 1:length(metadata.list)) {
-  
-  # Rename Chamber.number column as ID.
-  if ( "Chamber.number" %in% colnames(metadata.list[[i]]) ) {
-    metadata.list[[i]][, "ID"] <- metadata.list[[i]][, "Chamber.number"]
-    metadata.list[[i]][, "Chamber.number"] <- NULL
-  }
-  
-  # Then rename ID as FlyID to be consistent with feedlog.all
-  metadata.list[[i]][, "FlyID"] <- metadata.list[[i]][, "ID"]
-  metadata.list[[i]][, "ID"] <- NULL
-  
-  # Then add previous number of flies from last metadata to avoid overlap of FlyIDs.
-  if (i > 1) {
-    metadata.list[[i]][, "FlyID"] <- 
-      metadata.list[[i]][, "FlyID"] + 
-      range(metadata.list[[i - 1]][, "FlyID"])[2]
-  }
-  
-  #Order the columns properly.
-  metadata.list[[i]] <- as.data.table( metadata.list[[i]] )
-  setcolorder(metadata.list[[i]], colnames(metadata.list[[1]]))
-  metadata.list[[i]] <- data.frame(metadata.list[[i]])
-}
-
-# Combine the metadata 
-metadata.all <- do.call('rbind', metadata.list)
-rownames(metadata.all) <- NULL
-
-# Change all columns to uppercase, to mitigate capitilization errors.
-for ( c in colnames(metadata.all) ) {
-  metadata.all[, c] <- as.factor(toupper(metadata.all[, c]))
-}
-
-# Write to file.
-write.csv(metadata.all, file = paste(output.path, "/metadata.all.csv", sep = ""), row.names = FALSE)
-```
-
-```{r ProcessFeedLog, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r FeedLogAddNonFeedEvents}
+# Get flies that did not feed.
 feedlog.all[, "FoodIdx"] <- as.factor(feedlog.all[, "FoodIdx"])
 no.feed.flies <- metadata.all[, "FlyID"][ !metadata.all[, "FlyID"] %in% feedlog.all[, "FlyID"] ]
 
@@ -306,7 +367,52 @@ feedlog.all[, n] <- seq(0, h * 3600, bw)[findInterval(feedlog.all$FeedStartTimeR
 feedlog.all[, n] <- factor(feedlog.all[, n], levels = seq(bw, h * 3600, bw)  )
 all.time.bins <- seq(bw, h * 3600, bw)
 
+# Check that each fly has a feedlog for each food choice, at each timebin. If not, create a line that notes a null feed event.
+tt <- feedlog.all %>%
+  group_by(FlyID, FoodIdx) %>%
+  summarise_( number.of.time.bins = 
+                interp( ~length( levels(droplevels(n)) ), n = as.symbol(n) ),
+              
+              missing.time.bins = interp( ~ paste(nn[ !nn %in%levels(droplevels(n))], collapse = ",") , 
+                                          n = as.symbol(n),
+                                          nn = as.name("all.time.bins") )
+  )
+tt <- data.frame(filter(tt, number.of.time.bins != length(all.time.bins)))
+
+# Make a list and add appropriate missing lines to the list.  
+temp.list <- list()
+for ( rownum in 1:nrow(tt) ) {
+  missing.time.bins <- unlist(strsplit(tt[ rownum, "missing.time.bins"], split = "\\,"))
+  for (b in missing.time.bins) {
+    temp.row.name <- paste(tt[rownum, "FlyID"], # FlyID
+                           tt[rownum, "FoodIdx"], # Food Choice
+                           b, # Time bin
+                           sep = "_")
+    temp.list[[temp.row.name]] <- list(StartTime = NA, 
+                                       StartFrame = NA, 
+                                       FeedTubeIdx = NA, # In the future also calculate the FeedTubeIdx.
+                                       FlyID = tt[rownum, "FlyID"], 
+                                       AviFile = NA, 
+                                       Volume.mm3 = 0, 
+                                       Duration.ms = 0, 
+                                       Evap.mm3.per.sec = NA,
+                                       original.metadata.file = id.conversion[[as.character(tt[rownum, "FlyID"])]]$metadata.file,
+                                       original.feedlog.file = id.conversion[[as.character(tt[rownum, "FlyID"])]]$feedlog.file,
+                                       original.FlyID.feedlog = id.conversion[[as.character(tt[rownum, "FlyID"])]]$feedlog,
+                                       original.FlyID.metadata = id.conversion[[as.character(tt[rownum, "FlyID"])]]$metadata,
+                                       Valid = NA, 
+                                       ExperimentState = NA, 
+                                       FeedStartTimeRelative = NA,
+                                       FoodIdx = tt[rownum, "FoodIdx"],
+                                       bin.temp = b)
+    temp.list[[temp.row.name]][[n]] <- temp.list[[temp.row.name]][["bin.temp"]]
+    temp.list[[temp.row.name]][["bin.temp"]] <- NULL
+  }
+}
+
 if ( length(levels(feedlog.all[, "FoodIdx"])) > 1) {
+  
+  # Find flies that only fed on one food choice for the entire assay duration.
   feedlog.food.choice.count <- 
     feedlog.all %>% 
     group_by(FlyID) %>%
@@ -314,90 +420,133 @@ if ( length(levels(feedlog.all[, "FoodIdx"])) > 1) {
               food.idx = paste(levels(droplevels(FoodIdx)), collapse = ", ") )
   
   feedlog.food.choice.count <- data.frame(feedlog.food.choice.count)
+  feedlog.food.choice.count[, "food.choices.taken"] <- as.factor(feedlog.food.choice.count[, "food.choices.taken"])
   
-  t <- filter(feedlog.food.choice.count, food.choices.taken == 1)
-  rownames(t) <- t[, "FlyID"]
-  t[, "food.idx"] <- as.factor(t[, "food.idx"])
+  just.one <- filter( feedlog.food.choice.count, 
+               food.choices.taken == 1 ) # In the future, might want to change this to allow for more than 2 food choices....
+  rownames(just.one) <- just.one[, "FlyID"]
+  just.one[, "food.idx"] <- as.factor(just.one[, "food.idx"])
   
   # This adds in lines for flies that only fed on one food choice, to note that they did not feed on the other food choice.
-  for (id in t[, "FlyID"]) {
-    for (b in seq(bw, h * 3600, bw)) {
-      temp.row <- c(rep(NA, 3),
-                    id, NA, 0, 0,
-                    rep(NA, 4), 
-                    levels(t[, "food.idx"])[ !levels(t [, "food.idx"]) 
-                                             %in% t[paste(id), "food.idx"] ], 
-                    # Because id is numeric, you need to 'paste' it to refer to it as a rownumber.
-                    b )
-      feedlog.all <- rbind(feedlog.all, temp.row)
+  for (id in just.one[, "FlyID"]) {
+    missing.food.choices <- levels(feedlog.all$FoodIdx)[ !levels(feedlog.all$FoodIdx) %in% just.one[as.character(id), "food.idx"] ]
+    for (missing in missing.food.choices) {
+      for (b in seq(bw, h * 3600, bw)) {
+        temp.row.name <- paste(id, # FlyID
+                               missing, # Food Choice
+                               b, # Time bin
+                               sep = "_")
+        temp.list[[temp.row.name]] <- list(StartTime = NA, 
+                                           StartFrame = NA, 
+                                           FeedTubeIdx = NA, # In the future also calculate the FeedTubeIdx.
+                                           FlyID = id, 
+                                           AviFile = NA, 
+                                           Volume.mm3 = 0, 
+                                           Duration.ms = 0, 
+                                           Evap.mm3.per.sec = NA,
+                                           original.metadata.file = id.conversion[[as.character(tt[rownum, "FlyID"])]]$metadata.file,
+                                           original.feedlog.file = id.conversion[[as.character(tt[rownum, "FlyID"])]]$feedlog.file,
+                                           original.FlyID.feedlog = id.conversion[[as.character(tt[rownum, "FlyID"])]]$feedlog,
+                                           original.FlyID.metadata = id.conversion[[as.character(tt[rownum, "FlyID"])]]$metadata,                                           
+                                           Valid = NA, 
+                                           ExperimentState = NA, 
+                                           FeedStartTimeRelative = NA,
+                                           FoodIdx = missing,
+                                           bin.temp = b)
+        temp.list[[temp.row.name]][[n]] <- temp.list[[temp.row.name]][["bin.temp"]]
+        temp.list[[temp.row.name]][["bin.temp"]] <- NULL
+      }
     }
   }
 }
 
-# This adds in lines for flies that did not feed into the feedlog, to note that they actually did not feed at all.
+
+# This creates lines for flies that did not feed into the feedlog, to note that they actually did not feed at all.
 for (id in no.feed.flies) {
-  for (i in 1 : length( levels(feedlog.all[, "FoodIdx"] ))) {
+  for (i in levels(feedlog.all$FoodIdx) ) {
     for (b in seq(bw, h * 3600, bw)) {
-      temp.row <-  c(rep(NA, 3),
-                     id, NA, 0, 0,
-                     rep(NA, 4), 
-                     i, b )
-      feedlog.all <- rbind(feedlog.all, temp.row)
+      temp.row.name <- paste(id, # FlyID
+                             i, # Food Choice
+                             b, # Time bin
+                             sep = "_")
+      temp.list[[temp.row.name]] <- list(StartTime = NA, 
+                                         StartFrame = NA, 
+                                         FeedTubeIdx = NA, # In the future also calculate the FeedTubeIdx.
+                                         FlyID = id, 
+                                         AviFile = NA, 
+                                         Volume.mm3 = 0, 
+                                         Duration.ms = 0, 
+                                         Evap.mm3.per.sec = NA,
+                                         original.metadata.file = id.conversion[[as.character(tt[rownum, "FlyID"])]]$metadata.file,
+                                         original.feedlog.file = id.conversion[[as.character(tt[rownum, "FlyID"])]]$feedlog.file,
+                                         original.FlyID.feedlog = id.conversion[[as.character(tt[rownum, "FlyID"])]]$feedlog,
+                                         original.FlyID.metadata = id.conversion[[as.character(tt[rownum, "FlyID"])]]$metadata,
+                                         Valid = NA, 
+                                         ExperimentState = NA, 
+                                         FeedStartTimeRelative = NA,
+                                         FoodIdx = i,
+                                         bin.temp = b)
+      temp.list[[temp.row.name]][[n]] <- temp.list[[temp.row.name]][["bin.temp"]]
+      temp.list[[temp.row.name]][["bin.temp"]] <- NULL
     }
   }
 }
 
-# Now, check that each fly has a feedlog for each food choice, at each timebin. If not, create a line that notes a null feed event.
+# The magic of lapply -- turns each list element into a data.frame!
+temp.list <- lapply(temp.list, as.data.frame)
 
-tt <- feedlog.all %>%
-  group_by(FlyID, FoodIdx) %>%
-  summarise_( number.of.time.bins = 
-                interp( ~length( levels(droplevels(n)) ), n = as.symbol(n) ),
-              missing.time.bins = interp( ~ paste(nn[ !nn %in%levels(droplevels(n))], collapse = ",") , 
-                                          n = as.symbol(n),
-                                          nn = as.name("all.time.bins") )
-  )
-tt <- data.frame(filter(tt, number.of.time.bins != length(all.time.bins)))
+# Add original feedlog to temp.list
+temp.list[["original"]] <- feedlog.all
 
-# This loop takes fairly long to run..... Why?
-for ( rownum in 1:nrow(tt) ) {
-  missing.time.bins <- unlist(base::strsplit(tt[ rownum, "missing.time.bins"], split = "\\,"))
-  for (b in missing.time.bins) {
-    temp.row <-  c(rep(NA, 3),
-                   tt[rownum, "FlyID"], NA, 0, 0,
-                   rep(NA, 4), 
-                   tt[rownum, "FoodIdx"], b )
-    feedlog.all <- rbind(feedlog.all, temp.row)
-  }
-}
-
-# Convert Volume.mm3, Duration.ms, and FeedStartTimeRelative to numeric.
-cc <- c("Volume.mm3", "Duration.ms", "FeedStartTimeRelative")
-for (c in cc) {
-  feedlog.all[, c] <- as.numeric( as.character(feedlog.all[, c]) )
-}
+# Mush all the extra rows into feedlog.all
+feedlog.all <- rbindlist(temp.list)
 
 # Convert Volume.mm3 to Volume.nanoliter
 feedlog.all <- mutate(feedlog.all, Volume.nanoliter = Volume.mm3 * 1000)
-
 # Convert Duration.ms to Duration.s
 feedlog.all <- mutate(feedlog.all, Duration.s = Duration.ms / 1000)
-
 # Calculate feeding speed
 feedlog.all <- mutate(feedlog.all, feeding.speed.nl.per.s = Volume.nanoliter/ Duration.s )
+
+# Sort feedlog.all
+feedlog.all <- arrange_(feedlog.all, "FlyID", "FoodIdx", n)
+
+# removes temp.list to free up memory
+rm(temp.list)
 ```
 
-```{r CombineFeedLogAndMetaData, message = FALSE, warning = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
-# Prep before joining
-metadata.all[, "FlyID"] <- as.factor(metadata.all[, "FlyID"])
-feedlog.all[, "FlyID"] <- factor(feedlog.all[, "FlyID"], 
-                                 levels = levels(metadata.all[, "FlyID"]) )
+```{r CombineFeedLogAndMetaData}
+# # Prep before joining
+metadata.all$FlyID <- as.numeric(as.character(metadata.all$FlyID))
+feedlog.all$FlyID <- as.numeric(as.character(feedlog.all$FlyID))
 
 # Join (along columns) the feedlog and metadata by FlyID
 rawdata.all <- full_join(feedlog.all, metadata.all, by = "FlyID")
+
+# Get rid of duplicated columns.
+rawdata.all$original.metadata.file.x <- NULL
+rawdata.all$original.feedlog.file.x <- NULL
+rawdata.all$original.FlyID.metadata.x <- NULL
+rawdata.all$original.FlyID.feedlog.x <- NULL
+
+rawdata.all$original.metadata.file <- rawdata.all$original.metadata.file.y
+rawdata.all$original.feedlog.file <- rawdata.all$original.feedlog.file.y
+rawdata.all$original.FlyID.metadata <- rawdata.all$original.FlyID.metadata.y
+rawdata.all$original.FlyID.feedlog <- rawdata.all$original.FlyID.feedlog.y
+
+rawdata.all$original.metadata.file.y <- NULL
+rawdata.all$original.feedlog.file.y <- NULL
+rawdata.all$original.FlyID.metadata.y <- NULL
+rawdata.all$original.FlyID.feedlog.y <- NULL
+
+# Convert FlyID in all three dataframes back to factor.
+fly.id.levels <- as.character(sort(unique(metadata.all$FlyID)))
+metadata.all$FlyID <- factor(metadata.all$FlyID, fly.id.levels)
+feedlog.all$FlyID <- factor(feedlog.all$FlyID, fly.id.levels)
+rawdata.all$FlyID <- factor(rawdata.all$FlyID, fly.id.levels)
 ```
 
-```{r getAndSetContrasts, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r getAndSetContrasts}
 # Assign FoodType to the feed events
 for (rownum in 1:nrow(rawdata.all)) {
   foodchoice.col <- paste("Food.", (rawdata.all[rownum, "FoodIdx"]), sep = "")
@@ -407,10 +556,12 @@ rawdata.all[, "FoodType"] <- as.factor(rawdata.all[, "FoodType"])
 n <- paste("bin.", as.character(bw/60), ".min", sep = "")
 food.columns <- paste("Food.", seq( 1:length(levels(rawdata.all$FoodIdx)) ), sep = "")
 
-to.drop <- c("StartTime", "StartFrame", "FeedTubeIdx", "FlyID",                
-             "AviFile", "Volume.mm3", "Duration.ms", "Duration.s", "Evap.mm3.s", "Evap.mm3.per.sec",        
-             "Valid", "ExperimentState", "FeedStartTimeRelative", "FoodIdx",              
-             "feeding.speed.nl.per.s", n, "Volume.nanoliter",  "Food.1", "Food.2")
+to.drop <- c("StartTime", "StartFrame", "FeedTubeIdx", "FlyID", "AviFile", 
+             "Volume.mm3", "Volume.nanoliter", "Duration.ms", "Duration.s", "Evap.mm3.s", "Evap.mm3.per.sec", 
+             "original.metadata.file", "original.feedlog.file", 
+             "original.FlyID.metadata", "original.FlyID.feedlog",
+             "Valid", "ExperimentState", "FeedStartTimeRelative", "FoodIdx",
+             "feeding.speed.nl.per.s",  "Food.1", "Food.2", n)
 
 to.check <- colnames(rawdata.all)[!colnames(rawdata.all) %in% to.drop]
 
@@ -426,7 +577,7 @@ contrast.columns <- to.check[!to.check %in% to.drop]
 contrast.columns.noFoodType <- contrast.columns[!contrast.columns %in% c("FoodType")]
 ```
 
-```{r SetContrastReferenceLevels, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r SetContrastReferenceLevels}
 # Code below to remove only columns that are entirely NA from
 # http://stackoverflow.com/questions/15968494/how-to-delete-columns-with-na-in-r
 rawdata.all <- rawdata.all[, !apply( rawdata.all, 2, function(x) all(is.na(x)))]
@@ -455,8 +606,15 @@ for (i in contrast.columns) {
 }
 
 # Check that all contrast levels are captured correctly in `reference_levels.txt`.
-if ( all.equal(names(reflevels), contrast.columns) == FALSE ) {
+if ( all.equal(names(reflevels), contrast.columns) != TRUE ) {
   stop("Contrast Levels in `reference_levels.txt` do not match the set of columns in the metadata with contrasts. Please check that all factors with contrasts (across all feedlogs) are indicated in  `reference_levels.txt`.")
+}
+
+for (x in names(reflevels)) {
+  if ( all.equal(levels(rawdata.all[, x]), reflevels[[x]] ) != TRUE) {
+    error.msg <- paste("The levels in", x, "do not match between the metadata and `reference_levels.txt`. Please check `reference_levels.txt` again.")
+    stop(error.msg)
+  }
 }
 
 rawdata.all <- arrange_(rawdata.all, contrast.columns) # VERY IMPORTANT -- ORDERS THE DATAFRAME AS DESIRED.
@@ -482,7 +640,7 @@ rawdata.all[, "contrast.groups.noFoodType"] <- factor(rawdata.all[, "contrast.gr
                                                               unique(reflevels.combis$contrast.groups.noFoodType) )
 ```
 
-```{r IdentifyContrastNumbers, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r IdentifyContrastNumbers}
 contrast.numbers <- list()
 t <- dplyr::select( metadata.all, one_of(contrast.columns[!contrast.columns %in% c("FoodType")]) )
 
@@ -518,9 +676,9 @@ for (c in rownames(nonactive.flies)) {
 
 ```
 
-```{r CumsumDataCrunch, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r CumulativeVolumeDrunk}
 n <- paste("bin.", as.character(bw/60), ".min", sep = "")
-rawdata.all <- arrange_(rawdata.all, "contrast.groups.withFoodType", "FlyID", n, "FeedStartTimeRelative")
+rawdata.all <- arrange_(rawdata.all, "FlyID", "FeedStartTimeRelative")
 
 cols <- c("contrast.groups.withFoodType", "FlyID")
 dots <- lapply(cols, as.symbol)
@@ -536,10 +694,10 @@ rawdata.all[, "FlyID.contrast.groups.withFoodType"] <- factor(rawdata.all[, "Fly
 # Make sure that binned column is numeric.
 rawdata.all[, n] <- as.numeric ( as.character(rawdata.all[, n]) )
 
-write.csv(rawdata.all, file = paste(output.path, "/rawdata.all.csv", sep = ""), row.names = FALSE)
+write.csv(rawdata.all, file = paste(output.path, "/rawdata.all.processed.csv", sep = ""), row.names = FALSE)
 ```
 
-```{r summaryPerFly, message = FALSE, error=FALSE, echo = FALSE , eval = TRUE}
+```{r summaryPerFly}
 # See http://stackoverflow.com/questions/21208801/group-by-multiple-columns-in-dplyr-using-string-vector-input
 cols <- unique(c(contrast.columns, "FoodType", "FlyID")) # Need to group_by FoodType, regardless of whether it is a contrast factor or not.
 dots <- lapply(cols, as.symbol)
@@ -622,7 +780,7 @@ summary.per.fly[, "contrast.groups.noFoodType"] <- factor(summary.per.fly[, "con
                                                       unique(reflevels.combis$contrast.groups.noFoodType))
 ```
 
-```{r summaryPerContrastGroupWithFood, message = FALSE, error = TRUE, echo = FALSE, eval = TRUE}
+```{r summaryPerContrastGroupWithFood}
 temp.perFly <- summary.per.fly
 temp.perFly[, "total.feed.count"][temp.perFly[, "total.feed.count"] == 0] <- NA
 
@@ -783,7 +941,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r summaryPerContrastGroupNoFood, message = FALSE, error = TRUE, echo = FALSE, eval = TRUE}
+```{r summaryPerContrastGroupNoFood}
 cols <- contrast.columns.noFoodType
 dots <- lapply(cols, as.symbol)
 
@@ -948,7 +1106,7 @@ write.csv(summary.per.contrastGroup.noFood,
 
 ```
 
-```{r TimeCoursePerFly, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r TimeCoursePerFly}
 n <- paste("bin.", as.character(bw/60), ".min", sep = "")
 cols <- unique(c(n, contrast.columns, "FoodType", "FlyID")) 
 dots <- lapply(cols, as.symbol)
@@ -1038,7 +1196,7 @@ bin.per.fly[, n] <- as.numeric( as.character(bin.per.fly[, n]) )
 
 ```
 
-```{r TimeCoursePerContrastGroupWithFood, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r TimeCoursePerContrastGroupWithFood}
 temp.bin.perFly <- bin.per.fly
 temp.bin.perFly[, "total.feed.count"][temp.bin.perFly[, "total.feed.count"] == 0] <- NA
 
@@ -1240,7 +1398,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r TimeCoursePerContrastGroupNoFood, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r TimeCoursePerContrastGroupNoFood}
 n <- paste("bin.", as.character(bw/60), ".min", sep = "")
 cols <- unique(c(n, contrast.columns.noFoodType)) 
 dots <- lapply(cols, as.symbol)
@@ -1433,7 +1591,7 @@ bin.per.contrastGroup.noFood[, "contrast.groups.noFoodType"] <-  factor(bin.per.
 bin.per.contrastGroup.noFood[, n] <- as.numeric( as.character(bin.per.contrastGroup.noFood[, n]) )
 ```
 
-```{r HedgesG_withFood, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r HedgesG_withFood}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
   summary.escalc.withFood <- list()
   
@@ -1646,7 +1804,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1) {
 
 ```
 
-```{r HedgesG_noFood, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r HedgesG_noFood}
 summary.escalc.noFood <- list()
 summary.per.contrastGroup.noFood <- arrange_(summary.per.contrastGroup.noFood, contrast.columns.noFoodType)
 
@@ -1856,7 +2014,7 @@ for (c in colnames(hedges.g.noFood) ) {
 write.csv(hedges.g.noFood, file = paste(output.path, "/hedges.g.noFood.csv", sep = ""), row.names = FALSE)
 ```
 
-```{r PIPerFly, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r PIPerFly}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   
   cols <- unique(c(contrast.columns.noFoodType, "FlyID")) # Need to group_by FoodType, regardless of whether it is a contrast factor or not.
@@ -1903,7 +2061,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r AveragePiPerContrastGroup, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r AveragePiPerContrastGroup}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   average.pi.per.contrastGroup <- list()
   
@@ -1968,7 +2126,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r PiPerFlyTimeCourse, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r PiPerFlyTimeCourse}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   n <- paste("bin.", as.character(bw/60), ".min", sep = "")
   cols <- unique(c(n, contrast.columns.noFoodType, "FlyID")) 
@@ -2011,7 +2169,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r AveragePiPerContrastGroupTimeCourse, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE}
+```{r AveragePiPerContrastGroupTimeCourse}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   n <- paste("bin.", as.character(bw/60), ".min", sep = "")
   cols <- unique(c(n, contrast.columns.noFoodType)) 
@@ -2077,7 +2235,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r customContrastColourScale, message = FALSE, error = TRUE, warning = FALSE, echo = FALSE, eval = TRUE}
+```{r customContrastColourScale}
 # Create a custom color scale
 # See http://novyden.blogspot.sg/2013/09/how-to-expand-color-palette-with-ggplot.html
 
@@ -2103,7 +2261,7 @@ contrastFills <- scale_fill_manual(values = contrast.colours)
 
 Feedlog files analysed: `r paste(list.files(feedlog.path), collapse = "\n")`
 
-```{r DataSummary, message = FALSE, error=FALSE, echo = FALSE, eval = TRUE, results = "asis"}
+```{r DataSummary, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "asis"}
 print("Food type(s) used in experiment(s):")
 print( paste(levels(rawdata.all$FoodType), collapse = "; ") )
 xtable( contrast.numbers[,-2], caption = "Summary of Experimental Contrasts.")
@@ -2112,8 +2270,12 @@ if ( length(no.feed.flies) > 0 ) {
   print("FlyIDs of flies that did not feed at all (total feed count = 0) for the entire assay duration: ")
   print(as.character(no.feed.flies))
   
-  f <- metadata.all[as.numeric(no.feed.flies), c(contrast.columns.noFoodType, "FlyID")]
-  xtable(f, caption = "Flies that Did Not Feed.")
+  f <- metadata.all[as.numeric(no.feed.flies), c(contrast.columns.noFoodType, "FlyID", "original.FlyID.feedlog", "original.feedlog.file")]
+  grid.arrange(tableGrob(f),top = textGrob("Flies that didn't feed",
+                                           gp = gpar(fontface = "bold", 
+                                                     fontsize = 20),
+                                           vjust = 1))
+  # xtable(f, caption = "Flies that Did Not Feed.")
 }
 ```
 
@@ -2121,7 +2283,7 @@ if ( length(no.feed.flies) > 0 ) {
 
 ## Raster Plot of Feed Events
 
-```{r RasterPlotFeedEvent, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
+```{r RasterPlotFeedEvent, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
 
 density.plot.feed.times <- data.frame()
 plot.list <- list()
@@ -2235,7 +2397,7 @@ ggdraw(add_sub(a, "Raster Plots. A. Individual Raster Plots of Feed Events for e
 
 ## Proportion of Flies Feeding
 
-```{r proportionFliesFeedingStackedBar_TimeCourse, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 12, fig.width = 15, fig.fullwidth = TRUE}
+```{r proportionFliesFeedingStackedBar_TimeCourse, fig.height = 12, fig.width = 15, fig.fullwidth = TRUE}
 # Extract relevant columns from summary.per.contrastGroup.noFood
 prop.feeding <- summary.per.contrastGroup.noFood[, c("contrast.groups.noFoodType",
                                                      "proportion.feeding")]
@@ -2362,32 +2524,7 @@ ggdraw(
 
 ## Cumulative Volume Drunk Per Fly
 
-```{r CumSumDataPlot, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 20, fig.width = 15, fig.fullwidth = FALSE}
-# maxcumsum <- data.frame()
-# for (c in levels(rawdata.all[, "FlyID.contrast.groups.withFoodType"]) ) {
-#   temp.df <- droplevels( filter(rawdata.all, FlyID.contrast.groups.withFoodType == c) )
-#   temp.row <- data.frame(temp.df[1, "FlyID"], 
-#                          temp.df[1, "FlyID.contrast.groups.withFoodType"],
-#                          temp.df[1, "contrast.groups.withFoodType"],
-#                          range(temp.df[, "cumulative.vol.nanoliter"], na.rm =TRUE)[2],
-#                          range(temp.df[, "FeedStartTimeRelative"], na.rm =TRUE)[2])
-#   colnames(temp.row) <- c("FlyID", "FlyID.contrast.groups.withFoodType", 
-#                           "contrast.groups.withFoodType", "maxCumSum", "lastFeedTimeSec")
-#   maxcumsum <- rbind(maxcumsum, temp.row)
-#   colnames(maxcumsum) <- colnames(temp.row)
-# }
-# 
-# maxcumsum[, "lastFeedTimeSec"][maxcumsum[, "lastFeedTimeSec"] == -Inf] <- (h - 0.5) * 3600
-
-# # Chunk just before ggplot enables display of flies that did not feed at all.
-# n <- paste("bin.", as.character(bw/60), ".min", sep = "")
-# temp <- rawdata.all
-# for (x in 1:nrow(temp)) {
-#   if ( is.na(temp[x, "FeedStartTimeRelative"]) && temp[x, "FlyID"] %in% no.feed.flies ) {
-#     temp[x, "FeedStartTimeRelative"] <- as.numeric(as.character(temp[x, n]))
-#   }
-# }
-
+```{r CumSumDataPlot, fig.height = 20, fig.width = 15, fig.fullwidth = FALSE}
 temp <- rawdata.all[ !is.na(rawdata.all[, "FeedStartTimeRelative"]),  ]
 
 ggplot(data = temp, 
@@ -2420,25 +2557,14 @@ ggplot(data = temp,
   xlab("Time (hours)") + 
   ylab("Cumulative Volume (nl)")
 
-#   theme(strip.text.x = element_text(size = 14),
-#         axis.title = element_text(size = 18),
-#         axis.text = element_text(size = 16))
-
-  #   geom_text(data = maxcumsum,
-  #             aes(label = FlyID,
-  #                 x = lastFeedTimeSec + 2400,
-  #                 y = maxCumSum),
-  #             size = 7.5,
-  #             alpha = 0.8) +
-
 rm(temp)
 ```
 
 \newpage
 
-## Correlation of Feed Duration and Feed Volume
+Correlation Plots
 
-```{r CorrelateFeedDurationFeedVolume, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r CorrelationFeedDurationFeedVolume, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 corr <- data.frame()
 for (c in levels(rawdata.all[, "contrast.groups.withFoodType"]) ) {
   temp.df <- filter(rawdata.all, contrast.groups.withFoodType == c)
@@ -2491,11 +2617,7 @@ ggplot(data = rawdata.all,
 
 ```
 
-\newpage
-
-## Correlation of Average Feed Size Per Fly, and Total Feed Count Per Fly
-
-```{r CorrelateAverageFeedSizePerFly_TotalFeedCountPerFly, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r CorrelationAverageFeedSizePerFly_TotalFeedCountPerFly, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 corr <- data.frame()
 temp.summ <- summary.per.fly
 temp.summ[, "mean.vol.per.feed.nanoliter"][is.na(temp.summ[, "mean.vol.per.feed.nanoliter"])] <- 0
@@ -2547,15 +2669,13 @@ ggplot(data = temp.summ,
 
 ```
 
-\newpage
-
 ## Time Course -- Preference Index 
 
 Preference Index (Total Feed Count) for `r reflevels[["FoodType"]][2]` is calculated as follows: $$PI_{FeedCount} = \frac{FeedCount_{TestFood} - FeedCount_{RefFood}}{FeedCount_{TestFood} + FeedCount_{RefFood}}$$ Therefore a positive PI indicates a preference for `r reflevels[["FoodType"]][2]`.
 
 The same applies for Total Feed Duration and Total Volume Intake.
 
-```{r piPlot, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
+```{r Preference_Index_Plot, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
 if ( "FoodType" %in% names(reflevels) ) {
   n <- paste("bin.", as.character(bw/60), ".min", sep = "")
 
@@ -2696,7 +2816,7 @@ The 95% CI is shown as a surrounding envelope. A. PI by Feed Count. B. PI by Vol
 
 ## Binned Time Course Plots
 
-```{r TimeCourse, message = FALSE, warning = FALSE, error = FALSE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
+```{r TimeCourse, fig.height = 25, fig.width = 18, fig.fullwidth = TRUE, results = "hide"}
 n <- paste("bin.", as.character(bw/60), ".min", sep = "")
 plot.properties <- list()
 plot.properties[["Feed Count"]] <- c("mean.total.feed.count.per.fly",  # see bin.per.contrastGroup.noFood
@@ -2821,7 +2941,7 @@ represent contrast groups, while the shape corresponds to the food choice. Diamo
 
 ```
 
-```{r KruskalDunnTestTableGeneration, message = FALSE, warning = FALSE, results = "hide", error = TRUE, echo = FALSE, eval = TRUE}
+```{r KruskalDunnTestTableGeneration, results = "hide"}
 table.noFood <- list()
 table.withFood <- list()
 
@@ -3043,7 +3163,7 @@ for (m in names(plot.properties)) {
 
 ## Feed Count Summary
 
-```{r DensityDistributionFeedCount, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
+```{r DensityDistributionFeedCount, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -3137,7 +3257,7 @@ if (length(plot.list) == 1) {
 }
 ```
 
-```{r feedCountSummaryPlot_and_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE, fig.cap = ""}
+```{r feedCountSummaryPlot_and_Table, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE, fig.cap = ""}
 a <- "total.feed.count" # from summary.per.fly
 b <- "mean.total.feed.count.per.fly" # from summary.per.contrastGroup.withFood
 c <- "ci.lower.mean.total.feed.count.per.fly"
@@ -3343,15 +3463,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r feedCountKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, results = "hide", error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
+```{r feedCountKruskalDunnTestHedgesG, results = "hide", fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
-
-    grid.arrange(table.noFood[["Feed Count"]], table.withFood[["Feed Count"]], 
-                 nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Total Feed Count per Fly\nPairwise Comparisons",
-                                gp = gpar(fontface = "bold", 
-                                          fontsize = 20),
-                                vjust = 1) ) 
+  
+  grid.arrange(table.noFood[["Feed Count"]])
+  grid.arrange(table.withFood[["Feed Count"]])
+      
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
     grid.arrange(table.noFood[["Feed Count"]],
                  top = textGrob("Average Total Feed Count per Fly\nPairwise Comparisons",
@@ -3367,7 +3484,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Total Volume Intake Summary
 
-```{r DensityDistributionTotalVolumeIntake, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
+```{r DensityDistributionTotalVolumeIntake, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -3460,7 +3577,7 @@ if (length(plot.list) == 1) {
 }
 ```
 
-```{r VolumeIntakeSummaryPlot_And_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r VolumeIntakeSummaryPlot_And_Table, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 a <- "total.vol.intake.nanoliter" # from summary.per.fly
 b <- "mean.total.vol.intake.nanoliter" # from summary.per.contrastGroup.withFood
 c <- "ci.lower.mean.total.vol.intake.nanoliter"
@@ -3468,7 +3585,7 @@ d <- "ci.upper.mean.total.vol.intake.nanoliter"
 ylab <- "Total Volume Intake (nl)"
 plot.title <- "Total Volume Intake Summary Plot"
 bin.width <- 1
-dot.size <- 1
+dot.size <- 3
 
 ylim <- c(0, round(1.1 * range(summary.per.fly[, a])[2]))
 
@@ -3657,17 +3774,14 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r VolumeIntakeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
+```{r VolumeIntakeKruskalDunnTestHedgesG, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
-    grid.arrange(table.noFood[["Total Volume Intake (nl)"]], table.withFood[["Total Volume Intake (nl)"]], 
-                 nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Total Volume Intake\nPairwise Comparisons",
-                                gp = gpar(fontface = "bold", 
-                                          fontsize = 20),
-                                vjust = 1) ) 
+  grid.arrange(table.noFood[["Total Volume Intake (nl)"]])
+  grid.arrange(table.withFood[["Total Volume Intake (nl)"]])
+      
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
-    grid.arrange(table.noFood[["Time To First Feed (s)"]],
+    grid.arrange(table.noFood[["Total Volume Intake (nl)"]],
                  top = textGrob("Average Total Volume Intake\nPairwise Comparisons",
                                 gp = gpar(fontface = "bold", 
                                           fontsize = 20),
@@ -3681,7 +3795,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Time to First Feed Summary
 
-```{r DensityDistributionTimeToFirstFeed, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
+```{r DensityDistributionTimeToFirstFeed, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -3774,7 +3888,7 @@ if (length(plot.list) == 1) {
 }
 ```
 
-```{r TimeToFirstFeedSummaryPlot_and_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r TimeToFirstFeedSummaryPlot_and_Table, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 a <- "time.to.first.feed.s" # from summary.per.fly
 b <- "mean.time.to.first.feed.s" # from summary.per.contrastGroup.withFood
 c <- "ci.lower.time.to.first.feed.s"
@@ -3974,15 +4088,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r TimeToFirstFeedKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
+```{r TimeToFirstFeedKruskalDunnTestHedgesG, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
-
-    grid.arrange(table.noFood[["Time To First Feed (s)"]], table.withFood[["Time To First Feed (s)"]], 
-                 nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Time to First Feed\nPairwise Comparisons",
-                                gp = gpar(fontface = "bold", 
-                                          fontsize = 20),
-                                vjust = 1) ) 
+  
+  grid.arrange(table.noFood[["Time To First Feed (s)"]])
+  grid.arrange(table.withFood[["Time To First Feed (s)"]])
+  
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
     grid.arrange(table.noFood[["Time To First Feed (s)"]],
                  top = textGrob("Average Time to First Feed\nPairwise Comparisons",
@@ -4000,7 +4111,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 The section calculates averages in two different ways: at the level of individual flies, and at the level of contrast groups. For more information see this [Google spreadsheet](https://docs.google.com/spreadsheets/d/19mGXNM_dSc_Y3y5jy4Zm8LFybiSITK4EZ-GP9L-vAJY/edit#gid=0)
 
-```{r DensityDistributionFeedSizePerFly, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
+```{r DensityDistributionFeedSizePerFly, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -4093,7 +4204,7 @@ if (length(plot.list) == 1) {
 }
 ```
 
-```{r FeedSizePerFlySummaryPlot_And_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r FeedSizePerFlySummaryPlot_And_Table, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 a <- "mean.vol.per.feed.nanoliter" # from summary.per.fly
 b <- "mean.vol.per.feed.per.fly.nanoliter" # from summary.per.contrastGroup.withFood
 c <- "ci.lower.vol.per.feed.per.fly.nanoliter"
@@ -4101,7 +4212,7 @@ d <- "ci.upper.vol.per.feed.per.fly.nanoliter"
 ylab <- "Average Feed Size per Fly (nl)"
 plot.title <- "Average Feed Size per Fly\nSummary Plot"
 bin.width <- 0.25
-dot.size <- 1
+dot.size <- 6
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.vol.per.feed.nanoliter"], na.rm = TRUE)[2])
 
@@ -4287,15 +4398,12 @@ bottom <- ggplot(fig.label,
 
 ```
 
-```{r FeedSizePerFlyKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
+```{r FeedSizePerFlyKruskalDunnTestHedgesG, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
-    grid.arrange(table.noFood[["Feed Size per fly (nl)"]], table.withFood[["Feed Size per fly (nl)"]], 
-                 nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Feed Size Per Fly\nPairwise Comparisons",
-                                gp = gpar(fontface = "bold", 
-                                          fontsize = 20),
-                                vjust = 1) ) 
+  grid.arrange(table.noFood[["Feed Size per fly (nl)"]])
+  grid.arrange(table.withFood[["Feed Size per fly (nl)"]])
+  
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
     grid.arrange(table.noFood[["Feed Size per fly (nl)"]],
                  top = textGrob("Average Feed Size Per Fly\nPairwise Comparisons",
@@ -4307,7 +4415,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r FeedSizeSummaryPlot_And_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r FeedSizeSummaryPlot_And_Table, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 a <- "mean.vol.per.feed.nanoliter" # from summary.per.fly
 b <- "mean.vol.per.feed.nanoliter" # from summary.per.contrastGroup.withFood
 c <- "ci.lower.vol.per.feed.nanoliter"
@@ -4315,7 +4423,7 @@ d <- "ci.upper.vol.per.feed.nanoliter"
 ylab <- "Average Feed Size (nl)"
 plot.title <- "Average Feed Size\nSummary Plot"
 bin.width <- 0.25
-dot.size <- 1
+dot.size <- 6
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.vol.per.feed.nanoliter"], na.rm = TRUE)[2])
 
@@ -4502,15 +4610,12 @@ bottom <- ggplot(fig.label,
 
 ```
 
-```{r FeedSizeKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
+```{r FeedSizeKruskalDunnTestHedgesG, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
-
-    grid.arrange(table.noFood[["Average Feed Size (nl)"]], table.withFood[["Average Feed Size (nl)"]], 
-                 nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Feed Size\nPairwise Comparisons",
-                                gp = gpar(fontface = "bold", 
-                                          fontsize = 20),
-                                vjust = 1) ) 
+  
+  grid.arrange(table.noFood[["Average Feed Size (nl)"]])
+  grid.arrange(table.withFood[["Average Feed Size (nl)"]])  
+  
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
     grid.arrange(table.noFood[["Average Feed Size (nl)"]],
                  top = textGrob("Average Feed Size\nPairwise Comparisons",
@@ -4521,11 +4626,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
   print("No experimental contrasts; no Kruskal-Wallis ANOVA can be performed.")
 }
 ```
+
 \newpage
 
 ## Feed Duration Summary
 
-```{r DensityDistributionFeedDuration, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
+```{r DensityDistributionFeedDuration, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -4618,7 +4724,7 @@ if (length(plot.list) == 1) {
 }
 ```
 
-```{r feedDurationSummaryPlot_And_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r feedDurationSummaryPlot_And_Table, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 #### Make line-range plot
 a <- "mean.feed.duration.s" # from summary.per.fly
 b <- "mean.feed.duration.s" # from summary.per.contrastGroup.withFood
@@ -4627,7 +4733,7 @@ d <- "ci.upper.feed.duration.s"
 ylab <- "Average Feed Duration per Fly (s)"
 plot.title <- "Average Feed Duration per Fly Summary Plot"
 bin.width <- 0.2
-dot.size <- 0.8
+dot.size <- 2
 
 ylim <- ceiling(c(0, (1.1 * range(summary.per.fly[, "mean.feed.duration.s"], na.rm = TRUE))[2]))
 
@@ -4811,15 +4917,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r feedDurationKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
+```{r feedDurationKruskalDunnTestHedgesG, fig.height = 25, fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
-
-    grid.arrange(table.noFood[["Feed Duration (s)"]], table.withFood[["Feed Duration (s)"]], 
-                 nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Feed Duration\nPairwise Comparisons",
-                                gp = gpar(fontface = "bold", 
-                                          fontsize = 20),
-                                vjust = 1) ) 
+   
+  grid.arrange(table.noFood[["Feed Duration (s)"]])
+  grid.arrange(table.withFood[["Feed Duration (s)"]])  
+  
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
     grid.arrange(table.noFood[["Feed Duration (s)"]],
                  top = textGrob("Average Feed Duration\nPairwise Comparisons",
@@ -4835,7 +4938,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ## Feeding Speed Summary
 
-```{r DensityDistributionFeedingSpeed, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
+```{r DensityDistributionFeedingSpeed, fig.height = 16, fig.width = 10, fig.fullwidth = TRUE}
 plot.list <- list()
 
 a <- ggplot(data = summary.per.fly, 
@@ -4928,7 +5031,7 @@ if (length(plot.list) == 1) {
 }
 ```
 
-```{r feedingSpeedSummaryPlot_And_Table, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
+```{r feedingSpeedSummaryPlot_And_Table, fig.height = 18, fig.width = 15, fig.fullwidth = TRUE}
 #### Make Summary Table
 a <- "mean.feeding.speed.nl.per.s" # from summary.per.fly
 b <- "mean.feeding.speed.nl.per.s" # from summary.per.contrastGroup.withFood
@@ -4937,7 +5040,7 @@ d <- "ci.upper.feeding.speed.nl.per.s"
 ylab <- "Feeding Speed (nl/s)"
 plot.title <- "Average Feeding Speed Summary Plot"
 bin.width <- 0.025
-dot.size <- 1
+dot.size <- 2
 
 ylim <- c(0, 1.1 * range(summary.per.fly[, "mean.feeding.speed.nl.per.s"], na.rm = TRUE)[2])
 
@@ -5127,15 +5230,12 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 
 ```
 
-```{r feedingSpeedKruskalDunnTestHedgesG, message = FALSE, warning = FALSE, error = TRUE, echo = FALSE, eval = TRUE, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
+```{r feedingSpeedKruskalDunnTestHedgesG, fig.height = 25,  fig.width = 20, fig.fullwidth = TRUE}
 if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
-
-    grid.arrange(table.noFood[["Feeding Speed (nl/s)"]], table.withFood[["Feeding Speed (nl/s)"]], 
-                 nrow = 2, heights = c(0.5, 1.5),
-                 top = textGrob("Average Feeding Speed\nPairwise Comparisons",
-                                gp = gpar(fontface = "bold", 
-                                          fontsize = 20),
-                                vjust = 1) ) 
+  
+  grid.arrange(table.noFood[["Feeding Speed (nl/s)"]])
+  grid.arrange(table.withFood[["Feeding Speed (nl/s)"]])  
+  
   } else if ( length(levels(rawdata.all[, "FoodIdx"])) == 1 ) {
     grid.arrange(table.noFood[["Feeding Speed (nl/s)"]],
                  top = textGrob("Average Feeding Speed\nPairwise Comparisons",
@@ -5147,7 +5247,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
 }
 ```
 
-```{r Comparison, message = FALSE, warning = FALSE, error = FALSE, echo = FALSE, eval = FALSE, fig.height = 20, fig.width = 18, fig.fullwidth = TRUE}
+```{r Comparison, eval = FALSE, fig.height = 20, fig.width = 18, fig.fullwidth = TRUE}
 
 #####
 # This chunk is currently not run. I have to figure out a elegant way to display the effect sizes...
