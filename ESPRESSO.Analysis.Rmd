@@ -3323,7 +3323,6 @@ bottom <- ggplot(fig.label,
                  stackratio = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 20),
                        labels = seq(from = 0, to = ylim[2], by = 20),
                        expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
@@ -3334,7 +3333,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table No Food
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
@@ -3395,7 +3394,6 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 20),
                        labels = seq(from = 0, to = ylim[2], by = 20),
                        expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
@@ -3406,7 +3404,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table With Food
   summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
@@ -3633,7 +3631,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
 #       breaks = seq(from = 0, to = ylim[2], by = 20),
 #       labels = seq(from = 0, to = ylim[2], by = 20),
@@ -3645,7 +3642,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table No Food
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
@@ -3706,7 +3703,6 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
 #       breaks = seq(from = 0, to = ylim[2], by = 20),
 #       labels = seq(from = 0, to = ylim[2], by = 20),
@@ -3718,7 +3714,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table With Food
   summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
@@ -3943,7 +3939,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 3600),
                        labels = seq(from = 0, to = ylim[2], by = 3600) / 3600,
                        expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
@@ -3954,7 +3949,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table No Food
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
@@ -4018,7 +4013,6 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 3600),
                        labels = seq(from = 0, to = ylim[2], by = 3600) / 3600,
                        expand = c(0.01, 0)) + # multiplicative expansion factor so zero feeds show up nicely
@@ -4029,7 +4023,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table With Food
   summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
@@ -4260,7 +4254,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
 #       breaks = seq(from = 0, to = ylim[2], by = 3),
 #       labels = seq(from = 0, to = ylim[2], by = 3),
@@ -4272,7 +4265,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table No Food
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
@@ -4332,7 +4325,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
 #       breaks = seq(from = 0, to = ylim[2], by = 3),
 #       labels = seq(from = 0, to = ylim[2], by = 3),
@@ -4344,7 +4336,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table With Food
   summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
@@ -4472,7 +4464,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
 #       breaks = seq(from = 0, to = ylim[2], by = 3),
 #       labels = seq(from = 0, to = ylim[2], by = 3),
@@ -4484,7 +4475,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table No Food
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
@@ -4544,7 +4535,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
 #       breaks = seq(from = 0, to = ylim[2], by = 3),
 #       labels = seq(from = 0, to = ylim[2], by = 3),
@@ -4556,7 +4546,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table With Food
   summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
@@ -4781,7 +4771,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 3),
                        labels = seq(from = 0, to = ylim[2], by = 3),
                        expand = c(0.1, 0.75)) + # Not sure why I have to tweak the axis expansion constant manually for this plot.
@@ -4792,7 +4781,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table No Food
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
@@ -4852,7 +4841,6 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(breaks = seq(from = 0, to = ylim[2], by = 3),
                        labels = seq(from = 0, to = ylim[2], by = 3),
                        expand = c(0.1, 0.75)) + # Not sure why I have to tweak the axis expansion constant manually for this plot.
@@ -4863,7 +4851,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table With Food
   summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
@@ -5088,7 +5076,6 @@ bottom <- ggplot(fig.label,
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
 #       breaks = seq(from = 0, to = ylim[2], by = 3),
 #       labels = seq(from = 0, to = ylim[2], by = 3),
@@ -5100,7 +5087,7 @@ bottom <- ggplot(fig.label,
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table No Food
   summary.per.contrastGroup.noFood <- arrange(summary.per.contrastGroup.noFood, contrast.groups.noFoodType)
@@ -5162,7 +5149,6 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
                  dotsize = dot.size) + 
     contrastColours + contrastFills +
     guides( alpha = FALSE, size = FALSE, fill = FALSE, colour = FALSE, shape = FALSE) +
-    coord_cartesian(ylim = ylim) +
     scale_y_continuous(
       #       breaks = seq(from = 0, to = ylim[2], by = 3),
       #       labels = seq(from = 0, to = ylim[2], by = 3),
@@ -5174,7 +5160,7 @@ if ( length(levels(rawdata.all[, "FoodIdx"])) > 1 ) {
            axis.ticks.y = element_blank(),
            panel.grid.major.y = element_blank(),
            panel.grid.major.x = element_line(linetype = 3, colour = "black")) +
-    coord_flip()
+    coord_flip(ylim = ylim)
   
   #### Make Summary Table With Food
   summary.per.contrastGroup.withFood <- arrange(summary.per.contrastGroup.withFood, contrast.groups.withFoodType)
