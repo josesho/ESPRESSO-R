@@ -55,7 +55,7 @@ The R Markdown file can be knitted in RStudio runnning on Windows as well, but y
     file.path <- c("path/to/directory")
     # Local file directory path name where data files are stored.
     ```
-    Whilst the default values for `h`, `bs` and `bw` should be appropriate for most purposes, you need to check that `file.path` is correctly listed.
+    Whilst the default values for `h`, `bs` and `bw` should be appropriate for most purposes, you need to check that `file.path` is correctly listed. The file path should be the full path, and not a shortcut path. **You want to use "/Users/myName/path" instead of "~/path" which the command** `getwd()` **will produce.**
 9. If this is your first time running the R Markdown file, you will need to install several R packages. To do this you simply need to run the chunk titled `installPackages`. 
     - This is done by placing the cursor anywhere within the chunk and hitting `Command-Enter` (`Control-Enter` on Windows).
 10. Knit a PDF file by clicking the Knit button (alternatively, `File > Knit` or `Shift-Command-K`). 
@@ -66,6 +66,6 @@ The R Markdown file can be knitted in RStudio runnning on Windows as well, but y
     - This error most likely means that your `reference_levels.txt` was not properly formatted. Make sure that the format matches as the example given above.
 - *"FeedStartTimeRelative not being calculated correctly. Check the format of the StartTime column."*
 - *"There are Feed Events that have a negative time stamp."*
-    - This error most likely indicates that the format of the StartTime column in the feedlog CSV files is not in "Year-month-day Hour-Minute-Second" format. This most likely arose because the file was edited in Microsoft Excel. You should use the raw CSV directly produced by CRITTA.
+    - These errors most likely indicates that the format of the StartTime column in the feedlog CSV files is not in "Year-month-day Hour-Minute-Second" format. This most likely arose because the file was edited in Microsoft Excel. You should use the raw CSV directly produced by CRITTA.
 - *"Check the filename for the feedlog file ..."*
     - As the rest of the error message reports, make sure that the in the filename, the date is in YYYY-mm-dd format, the time is in hh-mm-ss format, and BOTH date and time MUST be flanked by underscores ' _ '.
